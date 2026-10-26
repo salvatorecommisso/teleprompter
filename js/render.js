@@ -15,6 +15,14 @@ export const extFor = (mime) => (mime.includes("mp4") ? "mp4" : "webm");
 // if it was first started by the person.
 export function primePlayers(takes, audioCtx) {
   const dest = audioCtx.createMediaStreamDestination();
+  const gain = audioCtx.createGain();
+  const limiter = audioCtx.createDynamicsCompressor(); // keeps boosted peaks from crackling
+  limiter.threshold.value = -3;
+  limiter.knee.value = 0;
+  limiter.ratio.value = 20;
+  limiter.attack.value = 0.003;
+  limiter.release.value = 0.1;
+  gain.connect(limiter).connect(dest);
   const players = takes.map((take) => {
     const v = document.createElement("video");
     v.playsInline = true;
@@ -22,12 +30,12 @@ export function primePlayers(takes, audioCtx) {
     v.src = URL.createObjectURL(take.blob);
     v.style.cssText = "position:fixed;width:72px;height:128px;opacity:0.01;pointer-events:none;left:0;bottom:0;z-index:-1";
     document.body.appendChild(v);
-    audioCtx.createMediaElementSource(v).connect(dest);
+    audioCtx.createMediaElementSource(v).connect(gain);
     const p = v.play();
     v.primed = p ? p.then(() => v.pause()).catch(() => {}) : Promise.resolve();
     return v;
   });
-  return { players, dest };
+  return { players, dest, gain };
 }
 
 export function releasePlayers(primed) {
