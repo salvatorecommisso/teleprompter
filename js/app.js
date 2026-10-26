@@ -8,7 +8,7 @@ import { pickMime, extFor, primePlayers, releasePlayers, render } from "./render
 const $ = (id) => document.getElementById(id);
 
 // ---------- settings ----------
-const DEFAULTS = { mode: "follow", speed: 4, size: 30, guides: "all", center: true, mirror: true, flip: false, lift: 35, sens: 50, micId: "", rail: "right" };
+const DEFAULTS = { mode: "follow", speed: 4, size: 30, guides: "all", center: true, mirror: true, flip: false, height: 75, sens: 50, micId: "", rail: "right", ghost: true, lockExposure: true };
 const settings = { ...DEFAULTS, ...store.get("settings", {}) };
 const saveSettings = () => store.set("settings", settings);
 const pxPerSecond = () => 12 + settings.speed * 9;
@@ -459,6 +459,7 @@ async function startCamera() {
     } else throw err;
   }
   $("cam").srcObject = stream;
+  showCameraLocks();
   const src = ctx().createMediaStreamSource(stream);
   analyser = ctx().createAnalyser();
   analyser.fftSize = 1024;
@@ -466,6 +467,29 @@ async function startCamera() {
   stream.getAudioTracks()[0].addEventListener("ended", () => { $("micChip").classList.add("silent"); toast("The mic disconnected. Tap the mic button to pick another."); });
   updateMicName();
   $("micChip").classList.remove("silent");
+}
+
+// Exposure, white balance and focus lock while recording, where the phone's browser allows it.
+const LOCKS = ["exposureMode", "whiteBalanceMode", "focusMode"];
+function lockable() {
+  const t = stream?.getVideoTracks()[0];
+  const caps = t?.getCapabilities ? t.getCapabilities() : {};
+  return LOCKS.filter((k) => (caps[k] || []).includes("manual") || (caps[k] || []).includes("none"));
+}
+function showCameraLocks() {
+  const names = { exposureMode: "exposure", whiteBalanceMode: "colour", focusMode: "focus" };
+  const ok = lockable();
+  $("lockInfo").textContent = ok.length
+    ? `This phone lets the app lock ${ok.map((k) => names[k]).join(", ")} while you record.`
+    : "This phone's browser doesn't let web apps lock exposure, so brightness can shift a little between sections. Steady lighting from the front helps most.";
+}
+async function setCameraLocks(on) {
+  const t = stream?.getVideoTracks()[0];
+  if (!t || !settings.lockExposure) return;
+  const caps = t.getCapabilities ? t.getCapabilities() : {};
+  const adv = {};
+  for (const k of lockable()) adv[k] = on ? (caps[k].includes("manual") ? "manual" : "none") : "continuous";
+  if (Object.keys(adv).length) await t.applyConstraints({ advanced: [adv] }).catch(() => {});
 }
 
 function stopCamera() {
@@ -482,6 +506,8 @@ function updateMicName() {
 
 const levelBuf = new Float32Array(1024);
 const micBars = [...document.querySelectorAll("#micBars i")];
+const voiceThreshold = () => -28 - settings.sens * 0.32; // 0 → -28 dB (needs a louder voice), 100 → -60 dB
+const levelPct = (db) => Math.max(0, Math.min(100, (db + 70) * 1.6));
 function levelLoop() {
   if (analyser) {
     analyser.getFloatTimeDomainData(levelBuf);
@@ -489,13 +515,14 @@ function levelLoop() {
     for (const x of levelBuf) sum += x * x;
     const db = 10 * Math.log10(sum / levelBuf.length + 1e-10);
     level = db;
-    $("micLevel").style.width = Math.max(0, Math.min(100, (db + 70) * 1.6)) + "%";
+    $("micLevel").style.width = levelPct(db) + "%";
     const lit = Math.max(0, Math.min(5, Math.round((db + 62) / 7)));
     micBars.forEach((bar, i) => bar.classList.toggle("on", i < lit));
-    const threshold = -28 - settings.sens * 0.32; // 0 → -28 dB (needs a louder voice), 100 → -60 dB
+    const threshold = voiceThreshold();
     const now = performance.now();
     if (db > threshold) lastVoice = now;
     voiceActive = now - lastVoice < 700;
+    $("micLevel").parentElement.classList.toggle("heard", voiceActive);
     prompter.voiceActive = voiceActive;
   }
   requestAnimationFrame(levelLoop);
@@ -590,11 +617,13 @@ function applySettings() {
   prompter.mode = settings.mode;
   prompter.speed = pxPerSecond();
   $("studio").style.setProperty("--fs", settings.size + "px");
-  $("studio").style.setProperty("--liftf", settings.lift / 100);
+  $("studio").style.setProperty("--liftf", settings.height / 100);
+  $("sensMark").style.left = levelPct(voiceThreshold()) + "%";
   $("prompt").classList.toggle("flip", settings.flip);
   $("cam").classList.toggle("mirror", settings.mirror);
   $("speedVal").textContent = settings.speed;
   $("rail").classList.toggle("left", settings.rail === "left");
+  if (script) showGhost();
   $("speedStep").hidden = settings.mode === "follow";
   $("modeChip").textContent = MODE_CHIP[settings.mode];
   drawGuides();
@@ -682,6 +711,7 @@ function loadSection(i) {
   prompter.setText(sections[i], next);
   prompter.running = false;
   $("sectionChip").textContent = `Section ${i + 1} of ${sections.length}${takes[i] ? " ✓" : ""}`;
+  showGhost();
 }
 
 $("backBtn").onclick = () => {
@@ -695,16 +725,36 @@ $("backBtn").onclick = () => {
 function openSheet(id) {
   if (id !== "setSheet") stopListening();
   ["setSheet", "secSheet"].forEach((s) => ($(s).hidden = s !== id));
+  $("sheetBackdrop").hidden = !id;
 }
 const closeSheets = () => openSheet(null);
+$("sheetBackdrop").onclick = closeSheets;
+// Swipe a sheet down to close it (when it's scrolled to the top).
+for (const id of ["setSheet", "secSheet"]) {
+  const el = $(id);
+  let y0 = null, dy = 0;
+  el.addEventListener("touchstart", (e) => { y0 = el.scrollTop <= 0 ? e.touches[0].clientY : null; dy = 0; }, { passive: true });
+  el.addEventListener("touchmove", (e) => {
+    if (y0 == null) return;
+    dy = e.touches[0].clientY - y0;
+    if (dy > 0) el.style.transform = `translateY(${dy}px)`;
+  }, { passive: true });
+  el.addEventListener("touchend", () => {
+    el.style.transform = "";
+    if (y0 != null && dy > 90) closeSheets();
+    y0 = null;
+  });
+}
 
 $("settingsBtn").onclick = () => {
   if (isRecording()) return;
   $("setMode").value = settings.mode;
   $("setSens").value = settings.sens;
-  $("setLift").value = settings.lift;
+  $("setLift").value = settings.height;
   $("setGuides").value = settings.guides;
   $("setRail").value = settings.rail;
+  $("setGhost").checked = settings.ghost;
+  $("setLock2").checked = settings.lockExposure;
   $("setCenter").checked = settings.center;
   $("setMirror").checked = settings.mirror;
   $("setFlip").checked = settings.flip;
@@ -715,9 +765,12 @@ $("settingsBtn").onclick = () => {
 const bindSetting = (id, key, prop = "value", conv = (v) => v) => ($(id).onchange = () => { settings[key] = conv($(id)[prop]); saveSettings(); applySettings(); });
 bindSetting("setMode", "mode");
 bindSetting("setSens", "sens", "value", Number);
-$("setLift").oninput = () => { settings.lift = Number($("setLift").value); saveSettings(); applySettings(); };
+$("setSens").oninput = $("setSens").onchange;
+$("setLift").oninput = () => { settings.height = Number($("setLift").value); saveSettings(); applySettings(); };
 bindSetting("setGuides", "guides");
 bindSetting("setRail", "rail");
+bindSetting("setGhost", "ghost", "checked");
+bindSetting("setLock2", "lockExposure", "checked");
 bindSetting("setCenter", "center", "checked");
 bindSetting("setMirror", "mirror", "checked");
 bindSetting("setFlip", "flip", "checked");
@@ -794,12 +847,14 @@ $("recBtn").onclick = async () => {
   recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 8_000_000, audioBitsPerSecond: 160_000 });
   recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
   recorder.onstop = onRecorded;
+  setCameraLocks(true);
   recorder.start(1000);
   recStart = performance.now(); recElapsed = 0; recPaused = false;
   prompter.running = true;
   startFollowIfNeeded();
   timerId = setInterval(() => ($("recTimer").textContent = "● " + fmtTime(elapsed())), 250);
   setRecUi();
+  showGhost();
 };
 
 $("pauseBtn").onclick = () => {
@@ -820,8 +875,28 @@ $("pauseBtn").onclick = () => {
   setRecUi();
 };
 
+// The last camera frame of each section, shown faintly over the next section so you can line up.
+const lastFrames = {};
+function grabFrame() {
+  const v = $("cam");
+  if (!v.videoWidth) return null;
+  const c = document.createElement("canvas");
+  c.width = Math.round(v.videoWidth / 3); c.height = Math.round(v.videoHeight / 3);
+  c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
+  return c.toDataURL("image/jpeg", 0.6);
+}
+function showGhost() {
+  const prev = sectionIndex > 0 && takes[sectionIndex - 1] ? lastFrames[sectionIndex - 1] : null;
+  const g = $("ghost");
+  const on = settings.ghost && !!prev && !isRecording();
+  g.hidden = !on;
+  if (on) { g.src = prev; g.classList.toggle("mirror", settings.mirror); }
+}
+
 function stopRecording() {
   if (!recorder || recorder.state === "inactive") return;
+  pendingFrame = grabFrame();
+  setCameraLocks(false);
   if (!recPaused) recElapsed += (performance.now() - recStart) / 1000;
   recPaused = false;
   recorder.stop();
@@ -830,7 +905,7 @@ function stopRecording() {
   clearInterval(timerId);
 }
 
-let pendingTake = null;
+let pendingTake = null, pendingFrame = null;
 function onRecorded() {
   const mime = recorder.mimeType.split(";")[0] || "video/mp4";
   const blob = new Blob(chunks, { type: mime });
@@ -862,6 +937,7 @@ $("takeRetake").onclick = () => { pendingTake = null; closeTake(); prompter.rese
 $("takeKeep").onclick = async () => {
   closeTake();
   takes[sectionIndex] = pendingTake;
+  if (pendingFrame) lastFrames[sectionIndex] = pendingFrame;
   pendingTake = null;
   setProgress(script.id, { saved: false, recorded: false, sent: false }); // a new take starts the script over
   const next = sections.findIndex((_, i) => !takes[i]);
@@ -923,12 +999,19 @@ async function openFinal() {
   updateTrimInfo();
 }
 
+// Every take loses its first and last moment (the tap on the record button, the camera settling),
+// and gets its own volume so all sections sound equally loud.
+const EDGE_IN = 0.3, EDGE_OUT = 0.35;
 function segments() {
   return finalTakes.flatMap((t, i) => {
     const c = curves[t.at];
-    if (!c) return [{ take: i, start: 0, end: t.duration }];
-    const ranges = $("trimOn").checked ? speechRanges(c, $("trimStrength").value / 100) : [[0, c.duration]];
-    return ranges.map(([start, end]) => ({ take: i, start, end }));
+    const dur = c?.duration || t.duration;
+    const gain = c ? boostFor([c]) : 1;
+    let ranges = c && $("trimOn").checked ? speechRanges(c, $("trimStrength").value / 100) : [[0, dur]];
+    if (dur > EDGE_IN + EDGE_OUT + 0.5) {
+      ranges = ranges.map(([a, b]) => [Math.max(a, EDGE_IN), Math.min(b, dur - EDGE_OUT)]).filter(([a, b]) => b - a > 0.08);
+    }
+    return ranges.map(([start, end]) => ({ take: i, start, end, gain }));
   });
 }
 
@@ -999,8 +1082,7 @@ async function makeVideo(primed) {
   const segs = segments();
   const key = JSON.stringify(segs.map((s) => [s.take, s.start.toFixed(2), s.end.toFixed(2)]));
   if (rendered && rendered.key === key) { if (primed) releasePlayers(primed); return rendered; }
-  const boost = boostFor(finalTakes.map((t) => curves[t.at]).filter(Boolean));
-  if (primed) primed.gain.gain.value = boost;
+  const boost = Math.max(...segs.map((s) => s.gain));
   const single = boost < 1.1 && segs.length === 1 && segs[0].start < 0.05 && finalTakes.length === 1 && segs[0].end >= (curves[finalTakes[0].at]?.duration || 0) - 0.05;
   if (single && primed) {
     // One untrimmed take: use it as recorded, no need to remake it.

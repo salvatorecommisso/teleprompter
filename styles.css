@@ -104,13 +104,14 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .studio.on { position: fixed; inset: 0; overflow: hidden; background: #000; }
 .frame { position: absolute; top: var(--top); left: 0; width: 100vw; aspect-ratio: 9 / 16; max-height: calc(100% - var(--top)); overflow: visible; background: #000; }
 .frame video { width: 100%; height: 100%; object-fit: cover; display: block; }
-.frame video.mirror { transform: scaleX(-1); }
+.frame video.mirror, .ghost.mirror { transform: scaleX(-1); }
+.ghost { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .3; pointer-events: none; }
 .guides { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 
 /* Script band sits right under the Dynamic Island with only three lines showing,
    and the line being read is the top one, so your eyes stay next to the lens. */
 /* --lift raises the band into the status-bar area (Settings → Script height). */
-.studio { --band: calc(var(--fs, 30px) * 1.32 * 3 + 10px); --lift: calc(var(--top) * var(--liftf, 0.25)); }
+.studio { --band: calc(var(--fs, 30px) * 1.32 * 3 + 10px); --lift: calc(var(--top) * var(--liftf, 0.75) - 60px * (1 - var(--liftf, 0.75))); }
 .prompt { position: absolute; top: calc(-1 * var(--lift)); left: 0; right: 0; height: var(--band); z-index: 2; overflow: hidden; touch-action: none;
   background: linear-gradient(to bottom, rgba(0,0,0,.78), rgba(0,0,0,.62) 80%, rgba(0,0,0,0)); }
 .prompt-text { position: relative; width: 84%; margin: 0 auto; text-align: center; padding: 0 0 60vh; font: 650 var(--fs, 30px)/1.32 var(--font-display); color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.6); will-change: transform; }
@@ -160,11 +161,16 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .sheet { position: absolute; left: 0; right: 0; bottom: 0; max-height: 86%; overflow-y: auto; background: var(--panel); border-top: 1px solid var(--line); border-radius: 20px 20px 0 0;
   padding: 20px max(16px, env(safe-area-inset-right, 0px)) calc(var(--bottom) + 18px) max(16px, env(safe-area-inset-left, 0px)); z-index: 5; box-shadow: 0 -20px 60px rgba(0,0,0,.5); }
 .sheet .row { margin-top: 14px; }
+.sheet { transition: transform .15s ease; }
+.sheet::before { content: ""; display: block; width: 40px; height: 5px; border-radius: 3px; background: var(--line); margin: -8px auto 12px; }
+.backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.25); z-index: 4; }
 .sheet .wide { margin-top: 16px; }
 .mic-name { display: flex; flex-direction: column; margin-top: 8px; }
 .mic-name .lbl { margin: 0 0 2px; }
-.meter { height: 14px; background: #0c0c10; border-radius: 999px; overflow: hidden; margin: 12px 0 4px; border: 1px solid var(--line); }
-.meter div { height: 100%; width: 0; background: linear-gradient(90deg, var(--ok), var(--accent) 80%, var(--rec)); transition: width .06s linear; }
+.meter { position: relative; height: 14px; background: #0c0c10; border-radius: 999px; overflow: hidden; margin: 12px 0 4px; border: 1px solid var(--line); }
+.meter div { height: 100%; width: 0; background: var(--muted); transition: width .06s linear; }
+.meter.heard div { background: var(--ok); }
+.sens-mark { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #fff; }
 .voice-test { margin-top: 14px; }
 .voice-test p { margin-top: 8px; min-height: 1.4em; }
 .sections { padding-left: 22px; margin: 10px 0 0; display: flex; flex-direction: column; gap: 8px; }

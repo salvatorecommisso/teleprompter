@@ -59,6 +59,8 @@ async function seek(v, t) {
 // segments: [{ take, start, end }], where take indexes primed.players.
 export async function render(primed, segments, { onProgress = () => {}, isCancelled = () => false } = {}) {
   const { players, dest } = primed;
+  // Each part fades its sound in and out over a few hundredths of a second, so cuts don't click.
+  const vol = primed.gain.gain, ac = primed.gain.context, FADE = 0.025;
   await Promise.all(players.map((v) => v.primed));
   const first = players[segments[0].take];
   if (first.readyState < 1) await once(first, "loadedmetadata");
@@ -95,13 +97,24 @@ export async function render(primed, segments, { onProgress = () => {}, isCancel
     const v = players[seg.take];
     await seek(v, seg.start);
     draw(v);
+    const level = seg.gain ?? 1;
+    vol.cancelScheduledValues(ac.currentTime);
+    vol.setValueAtTime(0, ac.currentTime);
     await v.play();
     if (rec.state === "inactive") rec.start(1000);
     else rec.resume();
+    vol.linearRampToValueAtTime(level, ac.currentTime + FADE);
+    let fading = false;
     await new Promise((resolve) => {
       const tick = () => {
         draw(v);
         onProgress(Math.min(1, (doneTime + Math.max(0, v.currentTime - seg.start)) / total));
+        if (!fading && v.currentTime >= seg.end - FADE - 0.02) {
+          fading = true;
+          vol.cancelScheduledValues(ac.currentTime);
+          vol.setValueAtTime(vol.value, ac.currentTime);
+          vol.linearRampToValueAtTime(0, ac.currentTime + FADE);
+        }
         if (v.currentTime >= seg.end - 0.02 || v.ended || isCancelled()) return resolve();
         requestAnimationFrame(tick);
       };
