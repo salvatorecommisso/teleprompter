@@ -688,7 +688,12 @@ $("modeChip").onclick = () => {
   saveSettings(); applySettings();
   toast(MODE_LABEL[settings.mode]);
 };
-$("restartBtn").onclick = () => { prompter.reset(); };
+// While recording: throw this take away and start it again straight away.
+$("restartBtn").onclick = () => {
+  if (!isRecording()) return prompter.reset();
+  discardTake = true;
+  stopRecording();
+};
 
 let toastTimer = 0;
 function toast(msg, ms = 3500) {
@@ -702,6 +707,8 @@ async function openStudio(s) {
   ctx(); // tap → allowed to start audio
   script = s;
   sections = splitSections(s.body);
+  $("secStrip").textContent = "";
+  hideRedo();
   takes = await store.takesFor(s.id);
   sectionIndex = Math.max(0, sections.findIndex((_, i) => !takes[i]));
   if (Object.keys(takes).length >= sections.length) sectionIndex = 0;
@@ -724,12 +731,14 @@ function loadSection(i) {
   const next = sections[i + 1] ? sections[i + 1].split(/\s+/).slice(0, 8).join(" ") + "…" : "";
   prompter.setText(sections[i], next);
   prompter.running = false;
-  $("sectionChip").textContent = `Section ${i + 1} of ${sections.length}${takes[i] ? " ✓" : ""}`;
+  $("sectionChip").textContent = `${i + 1} of ${sections.length}${takes[i] ? " ✓" : ""}`;
+  drawStrip();
   showGhost();
 }
 
 $("backBtn").onclick = () => {
   if (isRecording()) return;
+  hideRedo();
   stopListening();
   stopCamera();
   openLibrary();
@@ -852,10 +861,12 @@ function startFollowIfNeeded() {
   });
 }
 
-$("recBtn").onclick = async () => {
-  if (isRecording()) return stopRecording();
+$("recBtn").onclick = () => (isRecording() ? stopRecording() : startRecording());
+
+async function startRecording() {
   if (!cameraLive()) { try { await startCamera(); } catch (e) { return toast("The camera didn't start: " + e.message); } }
   closeSheets();
+  hideRedo();
   prompter.reset();
   const mime = pickMime();
   chunks = [];
@@ -867,10 +878,10 @@ $("recBtn").onclick = async () => {
   recStart = performance.now(); recElapsed = 0; recPaused = false;
   prompter.running = true;
   startFollowIfNeeded();
-  timerId = setInterval(() => ($("recTimer").textContent = "● " + fmtTime(elapsed())), 250);
+  timerId = setInterval(() => { $("recTimer").textContent = "● " + fmtTime(elapsed()); drawStrip(); }, 250);
   setRecUi();
   showGhost();
-};
+}
 
 $("pauseBtn").onclick = () => {
   if (!recorder || recorder.state === "inactive") return;
@@ -920,48 +931,84 @@ function stopRecording() {
   clearInterval(timerId);
 }
 
-let pendingTake = null, pendingFrame = null;
-function onRecorded() {
+let pendingFrame = null, discardTake = false;
+// Keep rolling: a finished take is kept at once and the next section comes up with the camera still on.
+// For a few seconds a Redo button lets you throw it away and go again.
+async function onRecorded() {
   const mime = recorder.mimeType.split(";")[0] || "video/mp4";
   const blob = new Blob(chunks, { type: mime });
   recorder = null;
   setRecUi();
+  if (discardTake === "drop") { discardTake = false; return; }
+  if (discardTake) {
+    discardTake = false;
+    toast("Starting again.", 1500);
+    return startRecording();
+  }
   if (blob.size < 1000) return toast("That take was empty. Try again.");
-  pendingTake = { blob, mime, duration: recElapsed, at: Date.now() };
-  stopCamera();
-  audioMode("playback");
-  const v = $("takeVideo");
-  v.src = URL.createObjectURL(blob);
-  $("takeSheet").hidden = false;
-  v.play().catch(() => {});
-}
-
-function closeTake() {
-  const v = $("takeVideo");
-  v.pause();
-  URL.revokeObjectURL(v.src);
-  v.removeAttribute("src");
-  $("takeSheet").hidden = true;
-}
-
-function cameraBack() {
-  startCamera().catch((e) => toast("The camera didn't restart: " + e.message + ". Go back to Scripts and open the script again.", 8000));
-}
-
-$("takeRetake").onclick = () => { pendingTake = null; closeTake(); prompter.reset(); cameraBack(); };
-$("takeKeep").onclick = async () => {
-  closeTake();
-  takes[sectionIndex] = pendingTake;
-  if (pendingFrame) lastFrames[sectionIndex] = pendingFrame;
-  pendingTake = null;
+  const i = sectionIndex;
+  const before = takes[i] || null;
+  takes[i] = { blob, mime, duration: recElapsed, at: Date.now() };
+  if (pendingFrame) lastFrames[i] = pendingFrame;
   setProgress(script.id, { saved: false, recorded: false, sent: false }); // a new take starts the script over
-  const next = sections.findIndex((_, i) => !takes[i]);
-  if (next !== -1) cameraBack();
-  await store.idb.put("takes", store.takeKey(script.id, sectionIndex), takes[sectionIndex]);
-  if (next === -1) return openFinal();
-  loadSection(next);
-  toast(`Section ${next + 1} next.`);
-};
+  await store.idb.put("takes", store.takeKey(script.id, i), takes[i]);
+  const next = nextMissing(i);
+  if (next === -1) {
+    drawStrip();
+    offerRedo(i, before, "All sections recorded. Finishing…", 2600, () => openFinal());
+  } else {
+    loadSection(next);
+    offerRedo(i, before, `Section ${i + 1} kept.`, 4000);
+  }
+}
+
+function nextMissing(after) {
+  for (let k = 1; k <= sections.length; k++) {
+    const j = (after + k) % sections.length;
+    if (!takes[j]) return j;
+  }
+  return -1;
+}
+
+let redoTimer = 0;
+function offerRedo(i, before, text, ms, then) {
+  const bar = $("redoBar");
+  bar.querySelector("span").textContent = text;
+  bar.hidden = false;
+  bar.style.setProperty("--ms", ms + "ms");
+  bar.classList.remove("run"); void bar.offsetWidth; bar.classList.add("run");
+  clearTimeout(redoTimer);
+  redoTimer = setTimeout(() => { bar.hidden = true; if (then) then(); }, ms);
+  $("redoBtn").onclick = async () => {
+    hideRedo();
+    if (before) { takes[i] = before; await store.idb.put("takes", store.takeKey(script.id, i), before); }
+    else { delete takes[i]; await store.idb.del("takes", store.takeKey(script.id, i)); }
+    loadSection(i);
+    toast(`Redo section ${i + 1}. Tap record when ready.`);
+  };
+}
+function hideRedo() { clearTimeout(redoTimer); $("redoBar").hidden = true; }
+
+// Story-style strip: one segment per section, filled once recorded. Tap one to (re)record it.
+function drawStrip() {
+  const strip = $("secStrip");
+  if (strip.children.length !== sections.length) {
+    strip.textContent = "";
+    sections.forEach((_, i) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.innerHTML = "<i></i>";
+      b.onclick = () => { if (isRecording()) return; hideRedo(); closeSheets(); loadSection(i); };
+      strip.appendChild(b);
+    });
+  }
+  [...strip.children].forEach((b, i) => {
+    b.className = (takes[i] ? "have" : "") + (i === sectionIndex ? " current" : "");
+    b.setAttribute("aria-label", `Section ${i + 1}${takes[i] ? ", recorded" : ""}`);
+    const fill = i === sectionIndex && isRecording() ? Math.min(1, prompter.y / Math.max(1, prompter.content.scrollHeight - window.innerHeight * 0.6)) : takes[i] ? 1 : 0;
+    b.firstChild.style.width = Math.round(fill * 100) + "%";
+  });
+}
 
 // Recording stops if the app goes to the background.
 document.addEventListener("visibilitychange", async () => {
@@ -970,6 +1017,7 @@ document.addEventListener("visibilitychange", async () => {
   if (!$("studio").classList.contains("on")) return;
   if (!cameraLive()) {
     if (recorder && recorder.state !== "inactive") {
+      discardTake = "drop";
       try { recorder.stop(); } catch {}
       toast("Recording stopped because the app was in the background. Retake this section.", 8000);
     }
@@ -993,8 +1041,9 @@ async function openFinal() {
   $("finalActions").hidden = false;
   $("doneActions").hidden = true;
   $("sendBtn").hidden = !drive.configured();
-  $("saveBtn").textContent = "Save to camera roll now";
-  $("keepBtn").classList.toggle("primary", !drive.configured());
+  lastFinishedKey = null;
+  $("finalStrip").hidden = $("finalStripHint").hidden = false;
+  drawFinalStrip();
   const missing = sections.map((_, i) => i).filter((i) => !takes[i]);
   if (missing.length) $("finalMsg").textContent = `Section ${missing.map((i) => i + 1).join(", ")} has no take yet and will be left out.`;
   finalTakes = sections.map((_, i) => takes[i]).filter(Boolean);
@@ -1037,6 +1086,7 @@ function updateTrimInfo() {
   $("trimInfo").textContent = $("trimOn").checked
     ? `Cuts ${(full - kept).toFixed(1)} s of quiet. New length ${kept.toFixed(1)} s (was ${full.toFixed(1)} s).`
     : `Length ${full.toFixed(1)} s.`;
+  $("trimSummary").textContent = $("trimOn").checked ? `· silences trimmed, ${kept.toFixed(1)} s` : `· no trimming, ${full.toFixed(1)} s`;
   stopPreview();
 }
 $("trimOn").onchange = updateTrimInfo;
@@ -1063,6 +1113,7 @@ $("finalPlay").onclick = async () => {
   for (const seg of segs) {
     if (p.stop) break;
     if (seg.take !== current) {
+      drawFinalStrip(sections.findIndex((_, i) => takes[i] === finalTakes[seg.take]));
       v.src = urls[seg.take];
       current = seg.take;
       await new Promise((r) => v.addEventListener("loadedmetadata", r, { once: true }));
@@ -1076,7 +1127,7 @@ $("finalPlay").onclick = async () => {
   }
   v.pause();
   urls.forEach((u) => URL.revokeObjectURL(u));
-  if (preview === p) { preview = null; $("finalPlay").hidden = false; }
+  if (preview === p) { preview = null; $("finalPlay").hidden = false; drawFinalStrip(); }
 };
 $("finalVideo").onclick = stopPreview;
 
@@ -1117,7 +1168,7 @@ async function makeVideo(primed) {
 }
 
 function busy(on) {
-  for (const id of ["sendBtn", "keepBtn", "saveBtn", "finalBack", "trimOn", "trimStrength", "saveAfter", "nextScript"]) $(id).disabled = on;
+  for (const id of ["sendBtn", "keepBtn", "finalBack", "trimOn", "trimStrength", "saveAfter", "nextScript"]) $(id).disabled = on;
 }
 
 $("sendBtn").onclick = async () => {
@@ -1170,25 +1221,40 @@ async function shareVideo(video) {
   return true;
 }
 
-$("saveBtn").onclick = async () => {
-  stopPreview();
-  $("finalMsg").textContent = "";
-  if (rendered && rendered.key === JSON.stringify(segments().map((s) => [s.take, s.start.toFixed(2), s.end.toFixed(2)]))) {
-    if (await shareVideo(rendered)) markSaved();
-    return;
+$("saveAfter").onclick = async () => {
+  if (!rendered || !(await shareVideo(rendered))) return;
+  markSaved();
+  if (lastFinishedKey) {
+    const v = await store.idb.get("finished", lastFinishedKey);
+    if (v) await store.idb.put("finished", lastFinishedKey, { ...v, saved: true });
   }
-  const primed = primePlayers(finalTakes, ctx());
-  busy(true);
-  try {
-    await makeVideo(primed);
-    progress(1, "Ready. Tap Save to camera roll, then choose Save Video.");
-    $("saveBtn").textContent = "Save to camera roll";
-  } catch (err) {
-    $("finalMsg").textContent = err.message;
-  } finally { busy(false); }
+  progress(1, "Saved to your camera roll.");
+  $("saveAfter").textContent = "Save to camera roll again";
 };
 
-$("saveAfter").onclick = async () => { if (rendered && (await shareVideo(rendered))) markSaved(); };
+// Final screen strip: tap a section to go back and redo just that one.
+let lastFinishedKey = null;
+function drawFinalStrip(playing = -1) {
+  const strip = $("finalStrip");
+  strip.textContent = "";
+  sections.forEach((_, i) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = (takes[i] ? "have" : "") + (i === playing ? " current" : "");
+    b.innerHTML = `<i style="width:${takes[i] ? 100 : 0}%"></i><span>${i + 1}</span>`;
+    b.setAttribute("aria-label", `Redo section ${i + 1}`);
+    b.onclick = async () => {
+      if ($("keepBtn").disabled) return; // busy making the video
+      stopPreview();
+      show("studio");
+      applySettings();
+      loadSection(i);
+      try { await startCamera(); } catch {}
+      toast(`Redo section ${i + 1}. Tap record when ready.`);
+    };
+    strip.appendChild(b);
+  });
+}
 
 function setProgress(id, patch) {
   const p = store.get("progress", {});
@@ -1207,10 +1273,11 @@ $("keepBtn").onclick = async () => {
   busy(true);
   try {
     const video = await makeVideo(primed);
-    await store.idb.put("finished", "f" + Date.now(), {
+    lastFinishedKey = "f" + Date.now();
+    await store.idb.put("finished", lastFinishedKey, {
       blob: video.blob, name: fileName(extFor(video.mime)), mime: video.mime, scriptId: script.id, at: Date.now(), saved: false,
     });
-    progress(1, "Kept. Save it with your other videos from Finished videos on the Scripts page.");
+    progress(1, "Your video is ready and kept in the app. Save it to your camera roll now, or later from the Scripts page.");
     showDone(true, true);
   } catch (err) {
     $("finalMsg").textContent = err.message;
@@ -1222,9 +1289,10 @@ $("keepBtn").onclick = async () => {
 
 function showDone(uploaded, kept = false) {
   $("finalActions").hidden = true;
+  $("finalStrip").hidden = $("finalStripHint").hidden = true;
   $("doneActions").hidden = false;
-  $("saveAfter").hidden = kept;
-  $("saveAfter").textContent = uploaded ? "Also save to camera roll" : "Save to camera roll";
+  $("saveAfter").hidden = false;
+  $("saveAfter").textContent = kept || !uploaded ? "Save to camera roll" : "Also save to camera roll";
   if (uploaded) {
     setProgress(script.id, { recorded: true });
     store.clearTakes(script.id);
