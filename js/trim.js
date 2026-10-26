@@ -50,4 +50,16 @@ export function speechRanges(curve, strength) {
   return ranges.filter(([a, b]) => b - a > 0.08);
 }
 
+// Volume boost that brings the loudest speech up to a normal level (at most 4x).
+export function boostFor(curves) {
+  let loud = -Infinity;
+  for (const { db } of curves) {
+    if (!db.length) continue;
+    const sorted = Array.from(db).sort((a, b) => a - b);
+    loud = Math.max(loud, sorted[Math.floor(sorted.length * 0.98)]);
+  }
+  if (!isFinite(loud)) return 1;
+  return Math.max(1, Math.min(4, Math.pow(10, (-14 - loud) / 20)));
+}
+
 export const totalLength = (segments) => segments.reduce((t, s) => t + (s.end - s.start), 0);

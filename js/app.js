@@ -2,7 +2,7 @@ import * as store from "./store.js";
 import * as vaultLib from "./crypto.js";
 import * as drive from "./drive.js";
 import { Prompter } from "./prompter.js";
-import { loudness, speechRanges, totalLength } from "./trim.js";
+import { loudness, speechRanges, totalLength, boostFor } from "./trim.js";
 import { pickMime, extFor, primePlayers, releasePlayers, render } from "./render.js";
 
 const $ = (id) => document.getElementById(id);
@@ -242,8 +242,15 @@ $("edDeleteYes").onclick = async () => {
 // ---------- camera and mic ----------
 let stream = null, analyser = null, level = 0, voiceActive = false, lastVoice = 0;
 
+// While the mic is on, iPhones play sound quietly (through the call speaker).
+// Playback screens turn the mic off and ask for normal loud playback.
+function audioMode(type) {
+  try { if (navigator.audioSession) navigator.audioSession.type = type; } catch {}
+}
+
 async function startCamera() {
   stopCamera();
+  audioMode("auto");
   const audio = { echoCancellation: false };
   if (settings.micId) audio.deviceId = { exact: settings.micId };
   const video = { facingMode: "user", width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } };
@@ -628,6 +635,8 @@ function onRecorded() {
   setRecUi();
   if (blob.size < 1000) return toast("That take was empty. Try again.");
   pendingTake = { blob, mime, duration: recElapsed, at: Date.now() };
+  stopCamera();
+  audioMode("playback");
   const v = $("takeVideo");
   v.src = URL.createObjectURL(blob);
   $("takeSheet").hidden = false;
@@ -642,13 +651,18 @@ function closeTake() {
   $("takeSheet").hidden = true;
 }
 
-$("takeRetake").onclick = () => { pendingTake = null; closeTake(); prompter.reset(); };
+function cameraBack() {
+  startCamera().catch((e) => toast("The camera didn't restart: " + e.message + ". Go back to Scripts and open the script again.", 8000));
+}
+
+$("takeRetake").onclick = () => { pendingTake = null; closeTake(); prompter.reset(); cameraBack(); };
 $("takeKeep").onclick = async () => {
   closeTake();
   takes[sectionIndex] = pendingTake;
-  await store.idb.put("takes", store.takeKey(script.id, sectionIndex), pendingTake);
   pendingTake = null;
   const next = sections.findIndex((_, i) => !takes[i]);
+  if (next !== -1) cameraBack();
+  await store.idb.put("takes", store.takeKey(script.id, sectionIndex), takes[sectionIndex]);
   if (next === -1) return openFinal();
   loadSection(next);
   toast(`Section ${next + 1} next.`);
@@ -676,6 +690,7 @@ let rendered = null;  // { key, blob, mime }
 async function openFinal() {
   stopListening();
   stopCamera();
+  audioMode("playback");
   show("final");
   $("finalTitle").textContent = script.title;
   $("finalMsg").textContent = "";
@@ -778,7 +793,9 @@ async function makeVideo(primed) {
   const segs = segments();
   const key = JSON.stringify(segs.map((s) => [s.take, s.start.toFixed(2), s.end.toFixed(2)]));
   if (rendered && rendered.key === key) { if (primed) releasePlayers(primed); return rendered; }
-  const single = segs.length === 1 && segs[0].start < 0.05 && finalTakes.length === 1 && segs[0].end >= (curves[finalTakes[0].at]?.duration || 0) - 0.05;
+  const boost = boostFor(finalTakes.map((t) => curves[t.at]).filter(Boolean));
+  if (primed) primed.gain.gain.value = boost;
+  const single = boost < 1.1 && segs.length === 1 && segs[0].start < 0.05 && finalTakes.length === 1 && segs[0].end >= (curves[finalTakes[0].at]?.duration || 0) - 0.05;
   if (single && primed) {
     // One untrimmed take: use it as recorded, no need to remake it.
     releasePlayers(primed);
