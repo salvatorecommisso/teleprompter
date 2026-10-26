@@ -146,10 +146,10 @@ async function openLibrary() {
 
 async function useSyncedFile(file) {
   const vault = store.get("vault");
-  if (!file || !file.epk) { synced = []; $("syncNote").textContent = "No scripts from Claude yet. Send Claude your setup code (Settings ⚙︎ → Setup code)."; return; }
+  if (!file || !file.epk) { synced = []; $("syncNote").textContent = "No scripts from Claude yet. Send Claude your setup code (Settings → Setup code)."; return; }
   if (file.to && file.to !== vault.pub.slice(0, 12)) {
     synced = [];
-    $("syncNote").textContent = "Claude's scripts are locked for a different setup code. Send Claude your current one (Settings ⚙︎ → Setup code).";
+    $("syncNote").textContent = "Claude's scripts are locked for a different setup code. Send Claude your current one (Settings → Setup code).";
     return;
   }
   try {
@@ -289,7 +289,7 @@ async function renderLibrary() {
       card.appendChild(save);
     }
     const del = document.createElement("button");
-    del.className = "btn small icon danger"; del.type = "button"; del.textContent = "🗑"; del.setAttribute("aria-label", "Delete " + s.title);
+    del.className = "btn small icon danger"; del.type = "button"; del.innerHTML = '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>'; del.setAttribute("aria-label", "Delete " + s.title);
     del.onclick = (e) => {
       e.stopPropagation();
       if (card.nextElementSibling?.classList.contains("confirm")) return card.nextElementSibling.remove();
