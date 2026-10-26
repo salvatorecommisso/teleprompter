@@ -947,6 +947,20 @@ $("nextScript").onclick = async () => {
 };
 
 // ---------- finished videos kept for a batch save ----------
+const SAVE_LIMIT = 10; // videos per tap of Save all, oldest first
+
+// Warn before the phone runs out of room for stored videos.
+async function storageWarning() {
+  let note = "";
+  try {
+    if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
+    const { usage = 0, quota = 0 } = (await navigator.storage?.estimate?.()) || {};
+    if (quota && quota - usage < 600e6) note = "Your phone is almost out of room for videos. Save them to the camera roll and clear them here.";
+  } catch {}
+  const msg = $("finishedMsg");
+  if (note) msg.textContent = note;
+}
+
 async function renderFinished() {
   const keys = (await store.idb.keys("finished").catch(() => [])).sort();
   const items = [];
@@ -969,7 +983,12 @@ async function renderFinished() {
     li.lastChild.textContent = i.saved ? "Saved ✓" : "Not saved";
     ul.appendChild(li);
   }
-  $("saveAll").textContent = unsaved.length ? `Save ${unsaved.length === 1 ? "it" : "all " + unsaved.length} to camera roll` : "Save all again";
+  const already = $("saveAll").dataset.started === "1";
+  $("saveAll").textContent = !unsaved.length ? "Save all again"
+    : unsaved.length === 1 ? "Save it to camera roll"
+    : unsaved.length <= SAVE_LIMIT ? `Save ${already ? "the last " : "all "}${unsaved.length} to camera roll`
+    : `Save ${already ? "next" : "first"} ${SAVE_LIMIT} to camera roll (${unsaved.length} waiting)`;
+  storageWarning();
   $("clearSaved").hidden = !savedCount;
   $("clearSaved").textContent = `Clear ${savedCount} saved`;
   return items;
@@ -979,6 +998,8 @@ $("saveAll").onclick = async () => {
   const items = await renderFinished();
   let batch = items.filter((i) => !i.saved);
   if (!batch.length) batch = items;
+  batch = batch.slice(0, SAVE_LIMIT);
+  $("saveAll").dataset.started = "1";
   const files = batch.map((i) => new File([i.blob], i.name, { type: i.mime }));
   const msg = $("finishedMsg");
   msg.textContent = "";
@@ -1007,7 +1028,11 @@ $("saveAll").onclick = async () => {
     await store.idb.put("finished", key, { ...rest, saved: true });
     setProgress(i.scriptId, { saved: true });
   }
-  if (!msg.textContent) msg.textContent = `Saved ${batch.length} video${batch.length === 1 ? "" : "s"}. Check Photos, then clear them here to free up space.`;
+  const left = items.filter((i) => !i.saved).length - batch.length;
+  if (!msg.textContent) msg.textContent = left > 0
+    ? `Saved ${batch.length}. ${left} more waiting: tap the button again.`
+    : `Saved ${batch.length} video${batch.length === 1 ? "" : "s"}. Check Photos, then clear them here to free up space.`;
+  if (left <= 0) delete $("saveAll").dataset.started;
   renderFinished();
   renderLibrary();
 };
