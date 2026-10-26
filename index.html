@@ -199,7 +199,7 @@ textarea{min-height:50vh;resize:vertical}
   };
   $("toTop").onclick=function(){setPlaying(false);pos=0;sc.scrollTop=0;wake()};
   $("exit").onclick=function(){
-    setPlaying(false);$("stage").classList.remove("on");
+    setPlaying(false);$("stage").classList.remove("on");renderList();show("list");
     if(document.fullscreenElement&&document.exitFullscreen)document.exitFullscreen();
   };
   $("speed").oninput=function(){settings.speed=+this.value;save(K.set,settings)};
