@@ -98,15 +98,16 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 
 /* Studio */
 .studio.on { position: fixed; inset: 0; overflow: hidden; background: #000; }
-.frame { position: absolute; top: var(--top); left: 0; width: 100vw; aspect-ratio: 9 / 16; max-height: calc(100% - var(--top)); overflow: hidden; background: #000; }
+.frame { position: absolute; top: var(--top); left: 0; width: 100vw; aspect-ratio: 9 / 16; max-height: calc(100% - var(--top)); overflow: visible; background: #000; }
 .frame video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .frame video.mirror { transform: scaleX(-1); }
 .guides { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 
 /* Script band sits right under the Dynamic Island with only three lines showing,
    and the line being read is the top one, so your eyes stay next to the lens. */
-.studio { --band: calc(var(--fs, 30px) * 1.32 * 3 + 14px); }
-.prompt { position: absolute; top: 0; left: 0; right: 0; height: var(--band); overflow: hidden; touch-action: none;
+/* --lift raises the band into the status-bar area (Settings → Script height). */
+.studio { --band: calc(var(--fs, 30px) * 1.32 * 3 + 10px); --lift: calc(var(--top) * var(--liftf, 0.25)); }
+.prompt { position: absolute; top: calc(-1 * var(--lift)); left: 0; right: 0; height: var(--band); z-index: 2; overflow: hidden; touch-action: none;
   background: linear-gradient(to bottom, rgba(0,0,0,.78), rgba(0,0,0,.62) 80%, rgba(0,0,0,0)); }
 .prompt-text { position: relative; width: 84%; margin: 0 auto; text-align: center; padding: 0 0 60vh; font: 650 var(--fs, 30px)/1.32 var(--font-display); color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.6); will-change: transform; }
 .prompt-text p { margin: 0 0 0.5em; }
@@ -114,12 +115,19 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .prompt-text .next { color: var(--muted); font-size: 0.6em; font-style: italic; margin-top: 1em; }
 .prompt.flip .prompt-text { transform-origin: center; }
 .prompt.flip { transform: scaleX(-1); }
-.reading-line { position: absolute; left: 6px; top: calc(var(--fs, 30px) * 0.66 + 6px); width: 0; height: 0; border: 7px solid transparent; border-left: 10px solid var(--accent); transform: translateY(-50%); }
+.reading-line { position: absolute; left: 6px; top: calc(var(--fs, 30px) * 0.66 + 2px); width: 0; height: 0; border: 7px solid transparent; border-left: 10px solid var(--accent); transform: translateY(-50%); }
 
-.topline { position: absolute; top: var(--band); left: 0; right: 0; display: flex; gap: 8px; justify-content: space-between; align-items: center; padding: 8px 12px; }
+.topline { position: absolute; top: calc(var(--band) - var(--lift)); left: 0; right: 0; display: flex; gap: 6px; justify-content: space-between; align-items: center; padding: 8px 12px; }
 .chip { background: var(--scrim); border: 1px solid rgba(255,255,255,.14); color: var(--text); border-radius: 999px; padding: 7px 12px; font-size: 14px; font-weight: 600; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); white-space: nowrap; }
 .chip.rec { color: #fff; background: var(--rec); border-color: var(--rec); font-variant-numeric: tabular-nums; }
-.toast { position: absolute; left: 12px; right: 12px; top: calc(var(--band) + 56px); background: var(--scrim); border: 1px solid rgba(255,255,255,.14); border-radius: 12px; padding: 10px 12px; font-size: 14px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.mic-chip { display: flex; align-items: center; gap: 6px; padding: 7px 10px; }
+.mic-chip .bars { display: flex; align-items: flex-end; gap: 2px; height: 14px; }
+.mic-chip .bars i { width: 3px; border-radius: 1px; background: rgba(255,255,255,.3); }
+.mic-chip .bars i:nth-child(1) { height: 30%; } .mic-chip .bars i:nth-child(2) { height: 45%; } .mic-chip .bars i:nth-child(3) { height: 60%; }
+.mic-chip .bars i:nth-child(4) { height: 80%; } .mic-chip .bars i:nth-child(5) { height: 100%; }
+.mic-chip .bars i.on { background: var(--ok); }
+.mic-chip.silent svg { color: #ff7a70; }
+.toast { position: absolute; left: 12px; right: 12px; top: calc(var(--band) - var(--lift) + 56px); background: var(--scrim); border: 1px solid rgba(255,255,255,.14); border-radius: 12px; padding: 10px 12px; font-size: 14px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
 
 .controls { position: absolute; left: 0; right: 0; bottom: 0; padding: 40px max(12px, env(safe-area-inset-right, 0px)) calc(var(--bottom) + 14px) max(12px, env(safe-area-inset-left, 0px));
   background: linear-gradient(to top, rgba(0,0,0,.82) 60%, rgba(0,0,0,0)); display: flex; flex-direction: column; gap: 14px; }
@@ -131,6 +139,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .main { justify-content: space-around; }
 .round { width: 64px; height: 64px; border-radius: 50%; background: var(--scrim); border: 1px solid rgba(255,255,255,.2); font-weight: 700; font-size: 14px; }
 .round:disabled { opacity: 0.35; }
+.round.spacer { visibility: hidden; }
 .record { width: 82px; height: 82px; border-radius: 50%; border: 5px solid #fff; background: transparent; padding: 0; display: grid; place-items: center; }
 .record span { width: 62px; height: 62px; border-radius: 50%; background: var(--rec); transition: all .2s ease; }
 .record.on span { width: 30px; height: 30px; border-radius: 7px; }

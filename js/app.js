@@ -8,7 +8,7 @@ import { pickMime, extFor, primePlayers, releasePlayers, render } from "./render
 const $ = (id) => document.getElementById(id);
 
 // ---------- settings ----------
-const DEFAULTS = { mode: "follow", speed: 4, size: 30, guides: "all", center: true, mirror: true, flip: false, sens: 50, micId: "" };
+const DEFAULTS = { mode: "follow", speed: 4, size: 30, guides: "all", center: true, mirror: true, flip: false, lift: 35, sens: 50, micId: "" };
 const settings = { ...DEFAULTS, ...store.get("settings", {}) };
 const saveSettings = () => store.set("settings", settings);
 const pxPerSecond = () => 12 + settings.speed * 9;
@@ -281,8 +281,9 @@ async function startCamera() {
   analyser = ctx().createAnalyser();
   analyser.fftSize = 1024;
   src.connect(analyser);
-  stream.getAudioTracks()[0].addEventListener("ended", () => toast("The mic disconnected. Open Mic check to pick one."));
+  stream.getAudioTracks()[0].addEventListener("ended", () => { $("micChip").classList.add("silent"); toast("The mic disconnected. Tap the mic button to pick another."); });
   updateMicName();
+  $("micChip").classList.remove("silent");
 }
 
 function stopCamera() {
@@ -298,6 +299,7 @@ function updateMicName() {
 }
 
 const levelBuf = new Float32Array(1024);
+const micBars = [...document.querySelectorAll("#micBars i")];
 function levelLoop() {
   if (analyser) {
     analyser.getFloatTimeDomainData(levelBuf);
@@ -306,6 +308,8 @@ function levelLoop() {
     const db = 10 * Math.log10(sum / levelBuf.length + 1e-10);
     level = db;
     $("micLevel").style.width = Math.max(0, Math.min(100, (db + 70) * 1.6)) + "%";
+    const lit = Math.max(0, Math.min(5, Math.round((db + 62) / 7)));
+    micBars.forEach((bar, i) => bar.classList.toggle("on", i < lit));
     const threshold = -28 - settings.sens * 0.32; // 0 → -28 dB (needs a louder voice), 100 → -60 dB
     const now = performance.now();
     if (db > threshold) lastVoice = now;
@@ -404,6 +408,7 @@ function applySettings() {
   prompter.mode = settings.mode;
   prompter.speed = pxPerSecond();
   $("studio").style.setProperty("--fs", settings.size + "px");
+  $("studio").style.setProperty("--liftf", settings.lift / 100);
   $("prompt").classList.toggle("flip", settings.flip);
   $("cam").classList.toggle("mirror", settings.mirror);
   $("speedVal").textContent = "Speed " + settings.speed;
@@ -480,8 +485,7 @@ async function openStudio(s) {
   drive.warmUp();
   try {
     if (!cameraLive()) await startCamera();
-    await fillMicList();
-    openSheet("micSheet");
+
   } catch (err) {
     toast(err.name === "NotAllowedError"
       ? "Camera or mic access is off. In Settings → Safari → Camera and Microphone, choose Allow, then reopen the app."
@@ -506,30 +510,34 @@ $("backBtn").onclick = () => {
 
 // sheets
 function openSheet(id) {
-  ["micSheet", "setSheet", "secSheet"].forEach((s) => ($(s).hidden = s !== id));
+  if (id !== "setSheet") stopListening();
+  ["setSheet", "secSheet"].forEach((s) => ($(s).hidden = s !== id));
 }
 const closeSheets = () => openSheet(null);
 
-$("micOk").onclick = () => { stopListening(); closeSheets(); };
 $("settingsBtn").onclick = () => {
   if (isRecording()) return;
   $("setMode").value = settings.mode;
   $("setSens").value = settings.sens;
+  $("setLift").value = settings.lift;
   $("setGuides").value = settings.guides;
   $("setCenter").checked = settings.center;
   $("setMirror").checked = settings.mirror;
   $("setFlip").checked = settings.flip;
+  $("voiceOut").textContent = "";
+  fillMicList().catch(() => {});
   openSheet("setSheet");
 };
 const bindSetting = (id, key, prop = "value", conv = (v) => v) => ($(id).onchange = () => { settings[key] = conv($(id)[prop]); saveSettings(); applySettings(); });
 bindSetting("setMode", "mode");
 bindSetting("setSens", "sens", "value", Number);
+$("setLift").oninput = () => { settings.lift = Number($("setLift").value); saveSettings(); applySettings(); };
 bindSetting("setGuides", "guides");
 bindSetting("setCenter", "center", "checked");
 bindSetting("setMirror", "mirror", "checked");
 bindSetting("setFlip", "flip", "checked");
 $("setClose").onclick = closeSheets;
-$("setMic").onclick = async () => { await fillMicList(); openSheet("micSheet"); };
+$("micChip").onclick = () => $("settingsBtn").click();
 $("setCode").onclick = () => { stopCamera(); showSetupCode(false); };
 $("setLock").onclick = () => { stopCamera(); showLock(); };
 
@@ -563,7 +571,6 @@ function setRecUi() {
   $("recBtn").classList.toggle("paused", recPaused);
   $("recBtn").setAttribute("aria-label", on ? "Stop" : "Record");
   $("pauseBtn").disabled = !on;
-  $("doneBtn").disabled = !on;
   $("pauseBtn").textContent = recPaused ? "▶" : "❚❚";
   $("pauseBtn").setAttribute("aria-label", recPaused ? "Resume" : "Pause");
   $("recTimer").hidden = !on;
@@ -615,8 +622,6 @@ $("pauseBtn").onclick = () => {
   }
   setRecUi();
 };
-
-$("doneBtn").onclick = () => stopRecording();
 
 function stopRecording() {
   if (!recorder || recorder.state === "inactive") return;
