@@ -75,7 +75,8 @@ export class Prompter {
     this.apply();
   }
 
-  readingLine() { return this.viewport.clientHeight * 0.3; }
+  // The line being read is the top line of the band, right under the camera.
+  readingLine() { return parseFloat(getComputedStyle(this.content).fontSize) * 0.66 + 6; }
 
   apply() {
     const max = Math.max(0, this.content.scrollHeight - this.readingLine());
