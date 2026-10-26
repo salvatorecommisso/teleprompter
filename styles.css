@@ -117,8 +117,8 @@ input[type=range] { width: 100%; accent-color: var(--text); }
 .studio.on { position: fixed; inset: 0; overflow: hidden; background: #000; }
 .frame { position: absolute; top: var(--top); left: 0; width: 100vw; aspect-ratio: 9 / 16; max-height: calc(100% - var(--top)); overflow: visible; background: #000; }
 .frame video { width: 100%; height: 100%; object-fit: cover; display: block; }
-.frame video.mirror, .ghost.mirror { transform: scaleX(-1); }
-.ghost { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .3; pointer-events: none; }
+.frame video.mirror, .ghost-img.mirror { transform: scaleX(-1); }
+.ghost-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .3; pointer-events: none; }
 .guides { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 
 /* Script band sits right under the Dynamic Island with only three lines showing,
@@ -241,3 +241,31 @@ input[type=range] { width: 100%; accent-color: var(--text); }
 #finishedMsg.pop::before { content: "✓"; display: inline-grid; place-items: center; width: 20px; height: 20px; margin-right: 6px; border-radius: 50%; background: var(--ok); color: #04210f; font-weight: 800; font-size: 12px; animation: check-pop .4s cubic-bezier(.3,1.6,.5,1); }
 @keyframes check-pop { from { transform: scale(0); } }
 @media (prefers-reduced-motion: reduce) { *, *::before { animation: none !important; transition: none !important; } }
+
+/* Section strip (story style) */
+.strip { display: flex; gap: 4px; }
+.strip button { flex: 1; background: none; border: 0; padding: 8px 0; cursor: pointer; position: relative; }
+.strip button i { display: block; height: 4px; border-radius: 2px; background: #fff; box-shadow: 0 0 0 100vmax rgba(255,255,255,.28) inset; }
+.strip button { --track: rgba(255,255,255,.28); }
+.strip button::before { content: ""; position: absolute; left: 0; right: 0; top: 8px; height: 4px; border-radius: 2px; background: var(--track); }
+.strip button i { position: relative; box-shadow: none; width: 0; transition: width .25s linear; }
+.strip button.current::before { background: rgba(255,255,255,.55); }
+.studio .strip { position: absolute; top: calc(var(--band) - var(--lift) + 2px); left: 12px; right: 12px; z-index: 3; }
+.studio .topline { top: calc(var(--band) - var(--lift) + 18px); }
+.studio .toast { top: calc(var(--band) - var(--lift) + 74px); }
+.final-strip { margin: 6px 0 2px; }
+.final-strip button { padding: 6px 0 0; }
+.final-strip button::before { top: 6px; height: 6px; background: var(--line); }
+.final-strip button i { height: 6px; background: var(--text); }
+.final-strip button.current i { background: var(--ok); }
+.final-strip button span { display: block; font-size: 12px; color: var(--muted); margin-top: 6px; }
+.btn.big { padding: 16px; font-size: 17px; }
+.adjust { margin: 12px 0; }
+.adjust summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
+
+/* Redo after stopping */
+.redo-bar { position: absolute; left: 12px; right: 74px; bottom: calc(var(--bottom) + 128px); z-index: 4; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; background: var(--scrim); border: 1px solid rgba(255,255,255,.14); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); overflow: hidden; animation: fade-in .18s ease; }
+.redo-bar span { flex: 1; font-size: 15px; }
+.redo-time { position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; background: rgba(255,255,255,.5); transform-origin: left; }
+.redo-bar.run .redo-time { animation: redo-count var(--ms, 4s) linear forwards; }
+@keyframes redo-count { to { transform: scaleX(0); } }

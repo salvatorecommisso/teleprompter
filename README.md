@@ -15,7 +15,7 @@ A teleprompter and 9:16 video recorder that runs in Safari on iPhone. You record
 - **Mic:** a small mic button on the recording screen shows a live level. Tap it (or ⚙︎) to see which mic is in use, switch mics, test voice-following, and set the script height.
 - **Scrolling:** *Follow voice* moves the script to the words you're saying. *Talk scroll* scrolls only while you're talking. *Steady* scrolls at a fixed speed. Drag the text to move it by hand.
 - **Scripts page:** filter by status at the top; the trash button deletes a script (with a confirm). Claude's scripts stay hidden unless Claude changes them.
-- **Recording:** Record starts right away, tap it again to stop, and Pause/Resume sits beside it. After each section you choose Keep or Retake. Recording a section again replaces the old take. Tap "Section X of Y" → Re-record all to start the whole script over.
+- **Recording:** Record starts right away; tap it again to stop. The take is kept and the next section comes up with the camera still on; a Redo button shows for a few seconds. ⟲ while recording restarts the take. The strip at the top shows each section: tap one to re-record it. Tap "X of Y" → Re-record all to start over. After the last section the finish screen plays the whole video; tap a section there to redo it, then Save video.
 - **Finish:** trim silences (Gentle to Tight), preview, then **Keep for later**, **OK, send to Google Drive** or **Save to camera roll now**.
 - **Finished videos:** kept videos wait on the Scripts page. **Save all to camera roll** saves them in one go (choose Save Videos), then **Clear saved** frees up space.
 

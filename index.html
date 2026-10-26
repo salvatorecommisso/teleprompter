@@ -103,12 +103,13 @@
 <section id="studio" class="screen studio">
   <div id="frame" class="frame">
     <video id="cam" autoplay playsinline muted></video>
-    <img id="ghost" class="ghost" alt="" hidden>
+    <img id="ghost" class="ghost-img" alt="" hidden>
     <svg id="guides" class="guides" viewBox="0 0 1080 1920" preserveAspectRatio="none" aria-hidden="true"></svg>
     <div id="prompt" class="prompt">
       <div id="promptText" class="prompt-text"></div>
       <div class="reading-line" aria-hidden="true"></div>
     </div>
+    <div id="secStrip" class="strip" role="group" aria-label="Sections"></div>
     <div class="topline">
       <button id="backBtn" class="chip" type="button" aria-label="Back to scripts">‹ Scripts</button>
       <button id="sectionChip" class="chip" type="button">Section 1 of 1</button>
@@ -194,14 +195,7 @@
     </div>
   </div>
 
-  <!-- One take's playback -->
-  <div id="takeSheet" class="take" hidden>
-    <video id="takeVideo" playsinline controls></video>
-    <div class="row take-actions">
-      <button id="takeRetake" class="btn" type="button">Retake</button>
-      <button id="takeKeep" class="btn primary" type="button">Keep</button>
-    </div>
-  </div>
+  <div id="redoBar" class="redo-bar" role="status" hidden><span></span><button id="redoBtn" class="btn small" type="button">Redo</button><b class="redo-time" aria-hidden="true"></b></div>
 </section>
 
 <!-- Final review, trim and send -->
@@ -209,22 +203,26 @@
   <div class="frame small-frame"><video id="finalVideo" playsinline></video><button id="finalPlay" class="play" type="button" aria-label="Play">▶</button></div>
   <div class="pad final-panel">
     <h1 id="finalTitle">Your video</h1>
-    <label class="check"><input id="trimOn" type="checkbox" checked> Trim silences</label>
-    <div id="trimBox">
-      <div class="slider-row"><span>Gentle</span><input id="trimStrength" type="range" min="0" max="100" value="50" aria-label="Trim strength"><span>Tight</span></div>
+    <div id="finalStrip" class="strip final-strip" role="group" aria-label="Sections"></div>
+    <p id="finalStripHint" class="muted small-text">Tap ▶ to watch it all. Tap a section above to redo it.</p>
+    <details class="adjust">
+      <summary>Adjust <span id="trimSummary" class="muted"></span></summary>
+      <label class="check"><input id="trimOn" type="checkbox" checked> Trim silences</label>
+      <div id="trimBox">
+        <div class="slider-row"><span>Gentle</span><input id="trimStrength" type="range" min="0" max="100" value="50" aria-label="Trim strength"><span>Tight</span></div>
+      </div>
       <p id="trimInfo" class="muted">Working out the quiet parts…</p>
-    </div>
+    </details>
     <p id="finalMsg" class="err" role="alert"></p>
     <div id="progressBox" class="progress" hidden><div class="progress-bar"><div id="progressBar"></div></div><p id="progressText"></p></div>
     <div id="finalActions" class="stack">
-      <button id="sendBtn" class="btn primary wide" type="button">OK, send to Google Drive</button>
-      <button id="keepBtn" class="btn primary wide" type="button">Keep for later</button>
-      <button id="saveBtn" class="btn wide" type="button">Save to camera roll now</button>
-      <button id="finalBack" class="btn wide ghost" type="button">Back to sections</button>
+      <button id="keepBtn" class="btn primary wide big" type="button">Save video</button>
+      <button id="sendBtn" class="btn wide" type="button">Send to Google Drive</button>
+      <button id="finalBack" class="btn wide ghost" type="button">Back to recording</button>
     </div>
     <div id="doneActions" class="stack" hidden>
-      <button id="saveAfter" class="btn wide" type="button">Also save to camera roll</button>
-      <button id="nextScript" class="btn primary wide" type="button">Next script</button>
+      <button id="saveAfter" class="btn primary wide big" type="button">Save to camera roll</button>
+      <button id="nextScript" class="btn wide" type="button">Next script</button>
     </div>
   </div>
 </section>
