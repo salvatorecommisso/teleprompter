@@ -1,0 +1,113 @@
+// Stitches the kept parts of every take into one 9:16 video.
+// It plays each part into a canvas and records that canvas with the take's sound,
+// so it takes about as long as the finished video. The recorder pauses between
+// parts, so the cuts land cleanly.
+
+export function pickMime() {
+  const options = ["video/mp4;codecs=avc1,mp4a.40.2", "video/mp4", "video/webm;codecs=vp9,opus", "video/webm"];
+  if (typeof MediaRecorder === "undefined") return "";
+  return options.find((m) => MediaRecorder.isTypeSupported(m)) || "";
+}
+
+export const extFor = (mime) => (mime.includes("mp4") ? "mp4" : "webm");
+
+// Must be called straight from a tap: iPhones only let a video play with sound
+// if it was first started by the person.
+export function primePlayers(takes, audioCtx) {
+  const dest = audioCtx.createMediaStreamDestination();
+  const players = takes.map((take) => {
+    const v = document.createElement("video");
+    v.playsInline = true;
+    v.preload = "auto";
+    v.src = URL.createObjectURL(take.blob);
+    v.style.cssText = "position:fixed;width:72px;height:128px;opacity:0.01;pointer-events:none;left:0;bottom:0;z-index:-1";
+    document.body.appendChild(v);
+    audioCtx.createMediaElementSource(v).connect(dest);
+    const p = v.play();
+    v.primed = p ? p.then(() => v.pause()).catch(() => {}) : Promise.resolve();
+    return v;
+  });
+  return { players, dest };
+}
+
+export function releasePlayers(primed) {
+  for (const v of primed.players) {
+    v.pause();
+    URL.revokeObjectURL(v.src);
+    v.remove();
+  }
+}
+
+const once = (el, ev) => new Promise((r) => el.addEventListener(ev, r, { once: true }));
+
+async function seek(v, t) {
+  if (v.readyState < 1) await once(v, "loadedmetadata");
+  if (Math.abs(v.currentTime - t) < 0.01 && v.readyState >= 2) return;
+  const done = once(v, "seeked");
+  v.currentTime = t;
+  await done;
+}
+
+// segments: [{ take, start, end }], where take indexes primed.players.
+export async function render(primed, segments, { onProgress = () => {}, isCancelled = () => false } = {}) {
+  const { players, dest } = primed;
+  await Promise.all(players.map((v) => v.primed));
+  const first = players[segments[0].take];
+  if (first.readyState < 1) await once(first, "loadedmetadata");
+  const srcW = first.videoWidth || 1080, srcH = first.videoHeight || 1920;
+
+  // Output: 9:16, cropped from the middle of the camera picture, at most 1080x1920.
+  let cropW = srcW, cropH = Math.round(srcW * 16 / 9);
+  if (cropH > srcH) { cropH = srcH; cropW = Math.round(srcH * 9 / 16); }
+  const outW = Math.min(1080, Math.round(cropW / 18) * 18), outH = outW / 9 * 16; // both even, exact 9:16
+
+  const canvas = document.createElement("canvas");
+  canvas.width = outW;
+  canvas.height = outH;
+  const g = canvas.getContext("2d");
+  const draw = (v) => {
+    const w = v.videoWidth || srcW, h = v.videoHeight || srcH;
+    let cw = w, ch = Math.round(w * 16 / 9);
+    if (ch > h) { ch = h; cw = Math.round(h * 9 / 16); }
+    g.drawImage(v, (w - cw) / 2, (h - ch) / 2, cw, ch, 0, 0, outW, outH);
+  };
+
+  const mime = pickMime();
+  const stream = new MediaStream([...canvas.captureStream(30).getVideoTracks(), ...dest.stream.getAudioTracks()]);
+  const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 10_000_000, audioBitsPerSecond: 160_000 });
+  const chunks = [];
+  rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  const stopped = once(rec, "stop");
+
+  const total = segments.reduce((t, s) => t + s.end - s.start, 0);
+  let doneTime = 0;
+
+  for (const seg of segments) {
+    if (isCancelled()) break;
+    const v = players[seg.take];
+    await seek(v, seg.start);
+    draw(v);
+    await v.play();
+    if (rec.state === "inactive") rec.start(1000);
+    else rec.resume();
+    await new Promise((resolve) => {
+      const tick = () => {
+        draw(v);
+        onProgress(Math.min(1, (doneTime + Math.max(0, v.currentTime - seg.start)) / total));
+        if (v.currentTime >= seg.end - 0.02 || v.ended || isCancelled()) return resolve();
+        requestAnimationFrame(tick);
+      };
+      tick();
+    });
+    rec.pause();
+    v.pause();
+    doneTime += seg.end - seg.start;
+  }
+
+  if (rec.state !== "inactive") rec.stop();
+  await stopped;
+  stream.getTracks().forEach((t) => t.stop());
+  if (isCancelled()) return null;
+  onProgress(1);
+  return { blob: new Blob(chunks, { type: mime.split(";")[0] }), mime: mime.split(";")[0], width: outW, height: outH };
+}
