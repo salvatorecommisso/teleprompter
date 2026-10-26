@@ -90,7 +90,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .card .info { flex: 1; min-width: 0; }
 .card .t { font-weight: 650; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card .s { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
-.card .state { font-size: 12px; font-weight: 700; padding: 4px 8px; border-radius: 999px; background: var(--line); color: var(--muted); white-space: nowrap; }
+.card .state { display: inline-block; margin-top: 6px; font-size: 12px; font-weight: 700; padding: 4px 8px; border-radius: 999px; background: var(--line); color: var(--muted); white-space: nowrap; }
 .card .state.partial { background: #3a2d10; color: var(--accent); }
 .card .state.sent { background: #123222; color: var(--ok); }
 .card.done { opacity: 0.6; }

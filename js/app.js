@@ -192,17 +192,18 @@ async function fetchScripts(manual) {
 
 // Each script is in one of these states. Labels live here so they're easy to rename.
 const STATUS = {
-  new:     { label: () => "New", cls: "" },
-  partial: { label: (k, n) => `Recorded ${k}/${n}`, cls: "partial" },
-  ready:   { label: () => "Recorded", cls: "partial" },
-  saved:   { label: () => "Done", cls: "sent" },
+  new:     { label: () => "To record", cls: "" },
+  partial: { label: (k, n) => `In progress ${k}/${n}`, cls: "partial" },
+  ready:   { label: () => "Ready to save", cls: "partial" },
+  saved:   { label: () => "Saved", cls: "sent" },
 };
 // Filter buttons, each covering one or more states.
 const FILTERS = [
   { id: "all", label: "All", states: ["new", "partial", "ready", "saved"] },
-  { id: "new", label: "New", states: ["new"] },
-  { id: "recorded", label: "Recorded", states: ["partial", "ready"] },
-  { id: "done", label: "Done", states: ["saved"] },
+  { id: "new", label: "To record", states: ["new"] },
+  { id: "partial", label: "In progress", states: ["partial"] },
+  { id: "ready", label: "Ready to save", states: ["ready"] },
+  { id: "saved", label: "Saved", states: ["saved"] },
 ];
 function statusOf(pr, kept) {
   if (pr.saved) return "saved";
@@ -210,10 +211,18 @@ function statusOf(pr, kept) {
   return kept ? "partial" : "new";
 }
 
+let libraryRender = 0;
 async function renderLibrary() {
+  const mine = ++libraryRender;
   const list = $("scriptList");
-  const progress = store.get("progress", {});
   const takeKeys = await store.idb.keys("takes").catch(() => []);
+  const unsavedVideo = {}; // script id → its newest finished video not yet in the camera roll
+  for (const k of (await store.idb.keys("finished").catch(() => [])).sort()) {
+    const v = await store.idb.get("finished", k);
+    if (v && !v.saved) unsavedVideo[v.scriptId] = { key: k, ...v };
+  }
+  if (mine !== libraryRender) return; // a newer render started while this one was reading
+  const progress = store.get("progress", {});
   list.textContent = "";
   const items = allScripts();
   if (!items.length) {
@@ -248,7 +257,7 @@ async function renderLibrary() {
     const card = document.createElement("div");
     card.className = "card" + (progress[s.id]?.saved ? " done" : "");
     card.tabIndex = 0;
-    card.innerHTML = '<div class="info"><div class="t"></div><div class="s"></div></div><span class="state"></span>';
+    card.innerHTML = '<div class="info"><div class="t"></div><div class="s"></div><span class="state"></span></div>';
     card.querySelector(".t").textContent = s.title;
     card.querySelector(".s").textContent = `${secs.length} section${secs.length === 1 ? "" : "s"} · about ${seconds} s${s.source === "local" ? " · on this phone" : ""}`;
     const state = card.querySelector(".state");
@@ -263,6 +272,21 @@ async function renderLibrary() {
       edit.className = "btn small"; edit.type = "button"; edit.textContent = "Edit";
       edit.onclick = (e) => { e.stopPropagation(); openEditor(s); };
       card.appendChild(edit);
+    }
+    if (s.status === "ready" && unsavedVideo[s.id]) {
+      const save = document.createElement("button");
+      save.className = "btn small primary"; save.type = "button"; save.textContent = "Save";
+      save.setAttribute("aria-label", "Save " + s.title + " to camera roll");
+      save.onclick = async (e) => {
+        e.stopPropagation();
+        save.disabled = true;
+        const n = await saveToCameraRoll([unsavedVideo[s.id]]);
+        if (n) $("finishedMsg").textContent = `Saved “${s.title}”. Check Photos.`;
+        save.disabled = false;
+        renderFinished();
+        renderLibrary();
+      };
+      card.appendChild(save);
     }
     const del = document.createElement("button");
     del.className = "btn small icon danger"; del.type = "button"; del.textContent = "🗑"; del.setAttribute("aria-label", "Delete " + s.title);
@@ -1049,7 +1073,7 @@ async function renderFinished() {
   const unsaved = items.filter((i) => !i.saved);
   const savedCount = items.length - unsaved.length;
   const mb = items.reduce((t, i) => t + i.blob.size, 0) / 1e6;
-  $("finishedTitle").textContent = `Finished videos (${items.length})`;
+  $("finishedTitle").textContent = unsaved.length ? `Ready to save (${unsaved.length})` : "Finished videos: all saved";
   $("finishedSize").textContent = mb >= 1000 ? `${(mb / 1000).toFixed(1)} GB` : `${Math.round(mb)} MB`;
   const ul = $("finishedList");
   ul.textContent = "";
@@ -1072,12 +1096,9 @@ async function renderFinished() {
   return items;
 }
 
-$("saveAll").onclick = async () => {
-  const items = await renderFinished();
-  let batch = items.filter((i) => !i.saved);
-  if (!batch.length) batch = items;
-  batch = batch.slice(0, SAVE_LIMIT);
-  $("saveAll").dataset.started = "1";
+// Opens the share sheet (Save Videos) for these finished videos and marks the ones that went through.
+// Returns how many were saved; 0 if cancelled or not possible.
+async function saveToCameraRoll(batch) {
   const files = batch.map((i) => new File([i.blob], i.name, { type: i.mime }));
   const msg = $("finishedMsg");
   msg.textContent = "";
@@ -1092,11 +1113,11 @@ $("saveAll").onclick = async () => {
     // The share sheet has a size limit, so save as many as fit in one go.
     let n = files.length;
     while (n > 1 && !navigator.canShare({ files: files.slice(0, n) })) n--;
-    if (!navigator.canShare({ files: files.slice(0, n) })) { msg.textContent = "This phone can't save these videos from here."; return; }
+    if (!navigator.canShare({ files: files.slice(0, n) })) { msg.textContent = "This phone can't save these videos from here."; return 0; }
     try { await navigator.share({ files: files.slice(0, n) }); }
     catch (err) {
       if (err.name !== "AbortError") msg.textContent = "Saving didn't finish: " + err.message;
-      return;
+      return 0;
     }
     batch = batch.slice(0, n);
     if (n < files.length) msg.textContent = `Saved ${n}. Tap the button again for the rest.`;
@@ -1106,6 +1127,19 @@ $("saveAll").onclick = async () => {
     await store.idb.put("finished", key, { ...rest, saved: true });
     setProgress(i.scriptId, { saved: true });
   }
+  return batch.length;
+}
+
+$("saveAll").onclick = async () => {
+  const items = await renderFinished();
+  let batch = items.filter((i) => !i.saved);
+  if (!batch.length) batch = items;
+  batch = batch.slice(0, SAVE_LIMIT);
+  $("saveAll").dataset.started = "1";
+  const n = await saveToCameraRoll(batch);
+  if (!n) return;
+  batch = batch.slice(0, n);
+  const msg = $("finishedMsg");
   const left = items.filter((i) => !i.saved).length - batch.length;
   if (!msg.textContent) msg.textContent = left > 0
     ? `Saved ${batch.length}. ${left} more waiting: tap the button again.`
