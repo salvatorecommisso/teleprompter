@@ -70,6 +70,16 @@
   </div>
   <div id="filterBar" class="filters pad" role="group" aria-label="Show scripts"></div>
   <div id="scriptList" class="list pad"></div>
+  <details id="deletedBox" class="deleted pad" hidden>
+    <summary><span id="deletedTitle">Recently deleted</span><button id="binSelect" class="btn small" type="button">Select</button></summary>
+    <p class="muted small-text">Scripts here are erased for good after 30 days, along with their recorded sections.</p>
+    <ul id="deletedList" class="deleted-list"></ul>
+    <div id="binBar" class="row bin-bar" hidden>
+      <button id="binAll" class="btn small" type="button">Select all</button>
+      <button id="binRestore" class="btn small primary" type="button">Restore</button>
+      <button id="binErase" class="btn small danger" type="button">Delete</button>
+    </div>
+  </details>
 </section>
 
 <section id="editor" class="screen pad">
@@ -84,7 +94,7 @@
     <button id="edDelete" class="btn danger" type="button">Delete</button>
   </div>
   <div id="edDeleteBox" class="confirm" hidden>
-    <p>Delete this script and its takes from this phone?</p>
+    <p>Delete this script? It moves to Recently deleted, where you can restore it for 30 days.</p>
     <div class="row"><button id="edDeleteNo" class="btn" type="button">Keep it</button><button id="edDeleteYes" class="btn danger" type="button">Delete</button></div>
   </div>
 </section>
