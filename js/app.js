@@ -8,12 +8,12 @@ import { pickMime, extFor, primePlayers, releasePlayers, render } from "./render
 const $ = (id) => document.getElementById(id);
 
 // ---------- settings ----------
-const DEFAULTS = { mode: "follow", speed: 4, size: 30, guides: "all", center: true, mirror: true, flip: false, lift: 35, sens: 50, micId: "" };
+const DEFAULTS = { mode: "follow", speed: 4, size: 30, guides: "all", center: true, mirror: true, flip: false, lift: 35, sens: 50, micId: "", rail: "right" };
 const settings = { ...DEFAULTS, ...store.get("settings", {}) };
 const saveSettings = () => store.set("settings", settings);
 const pxPerSecond = () => 12 + settings.speed * 9;
 const MODE_LABEL = { follow: "Follow my voice", talk: "Scroll while I talk", steady: "Steady scroll" };
-const MODE_CHIP = { follow: "Follow voice", talk: "Talk scroll", steady: "Steady" };
+const MODE_CHIP = { follow: "Voice", talk: "Talk", steady: "Steady" };
 
 // ---------- app state ----------
 let session = null;          // unlocked keys, only in memory
@@ -496,7 +496,8 @@ function applySettings() {
   $("studio").style.setProperty("--liftf", settings.lift / 100);
   $("prompt").classList.toggle("flip", settings.flip);
   $("cam").classList.toggle("mirror", settings.mirror);
-  $("speedVal").textContent = "Speed " + settings.speed;
+  $("speedVal").textContent = settings.speed;
+  $("rail").classList.toggle("left", settings.rail === "left");
   $("speedStep").hidden = settings.mode === "follow";
   $("modeChip").textContent = MODE_CHIP[settings.mode];
   drawGuides();
@@ -606,6 +607,7 @@ $("settingsBtn").onclick = () => {
   $("setSens").value = settings.sens;
   $("setLift").value = settings.lift;
   $("setGuides").value = settings.guides;
+  $("setRail").value = settings.rail;
   $("setCenter").checked = settings.center;
   $("setMirror").checked = settings.mirror;
   $("setFlip").checked = settings.flip;
@@ -618,6 +620,7 @@ bindSetting("setMode", "mode");
 bindSetting("setSens", "sens", "value", Number);
 $("setLift").oninput = () => { settings.lift = Number($("setLift").value); saveSettings(); applySettings(); };
 bindSetting("setGuides", "guides");
+bindSetting("setRail", "rail");
 bindSetting("setCenter", "center", "checked");
 bindSetting("setMirror", "mirror", "checked");
 bindSetting("setFlip", "flip", "checked");
