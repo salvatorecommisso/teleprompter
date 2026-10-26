@@ -68,6 +68,7 @@
       <div class="row"><button id="clearNo" class="btn" type="button">Keep them</button><button id="clearYes" class="btn danger" type="button">Remove</button></div>
     </div>
   </div>
+  <div id="filterBar" class="filters pad" role="group" aria-label="Show scripts"></div>
   <div id="scriptList" class="list pad"></div>
 </section>
 
@@ -164,7 +165,11 @@
   <div id="secSheet" class="sheet" hidden>
     <h2 id="secTitle">Sections</h2>
     <ol id="secList" class="sections"></ol>
-    <div class="row"><button id="secFinish" class="btn primary" type="button">Finish video</button><button id="secClose" class="btn" type="button">Close</button></div>
+    <div class="row"><button id="secFinish" class="btn primary" type="button">Finish video</button><button id="secRedo" class="btn danger" type="button">Re-record all</button><button id="secClose" class="btn" type="button">Close</button></div>
+    <div id="secRedoBox" class="confirm" hidden>
+      <p>Throw away every recorded section of this script and start again from section 1?</p>
+      <div class="row"><button id="secRedoNo" class="btn" type="button">Keep them</button><button id="secRedoYes" class="btn danger" type="button">Start over</button></div>
+    </div>
   </div>
 
   <!-- One take's playback -->
