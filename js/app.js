@@ -153,19 +153,29 @@ async function useSyncedFile(file) {
 }
 
 async function fetchScripts(manual) {
+  const btn = $("refresh");
+  if (manual) { btn.disabled = true; btn.textContent = "Checking…"; }
   try {
     const r = await fetch("scripts.enc.json?t=" + Date.now(), { cache: "no-store" });
     if (!r.ok) throw new Error();
     const file = await r.json();
-    if (JSON.stringify(file) !== JSON.stringify(store.get("syncedFile"))) {
+    const before = synced.length;
+    const changed = JSON.stringify(file) !== JSON.stringify(store.get("syncedFile"));
+    if (changed) {
       store.set("syncedFile", file);
       await useSyncedFile(file);
       renderLibrary();
-    } else if (manual) {
-      $("syncNote").textContent += " Up to date.";
+    }
+    if (manual) {
+      const added = synced.length - before;
+      const time = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      const base = $("syncNote").textContent.replace(/ (Checked|No new).*$/, "");
+      $("syncNote").textContent = base + (changed && added > 0 ? ` Checked ${time}: ${added} new.` : changed ? ` Checked ${time}: scripts updated.` : ` No new scripts (checked ${time}).`);
     }
   } catch {
     if (manual) $("syncNote").textContent = "No connection. Showing the scripts saved on this phone.";
+  } finally {
+    if (manual) { btn.disabled = false; btn.textContent = "Refresh"; }
   }
 }
 
