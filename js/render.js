@@ -46,6 +46,34 @@ export function releasePlayers(primed) {
   }
 }
 
+// Average brightness (0-255) of the middle of each take, as a correction factor per take.
+async function brightnessFactors(players, segments, crop) {
+  const takes = [...new Set(segments.map((s) => s.take))];
+  if (takes.length < 2) return {};
+  const c = document.createElement("canvas");
+  c.width = c.height = 24;
+  const g = c.getContext("2d", { willReadFrequently: true });
+  const luma = {};
+  for (const t of takes) {
+    const segs = segments.filter((s) => s.take === t);
+    const mid = (segs[0].start + segs[segs.length - 1].end) / 2;
+    try {
+      await seek(players[t], mid);
+      g.drawImage(players[t], ...crop(players[t]), 0, 0, 24, 24);
+      const d = g.getImageData(0, 0, 24, 24).data;
+      let sum = 0;
+      for (let i = 0; i < d.length; i += 4) sum += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+      luma[t] = sum / (d.length / 4);
+    } catch {}
+  }
+  const vals = Object.values(luma).filter((x) => x > 8).sort((a, b) => a - b);
+  if (vals.length < 2) return {};
+  const target = vals[Math.floor(vals.length / 2)];
+  const out = {};
+  for (const t in luma) if (luma[t] > 8) out[t] = Math.max(0.8, Math.min(1.25, target / luma[t]));
+  return out;
+}
+
 const once = (el, ev) => new Promise((r) => el.addEventListener(ev, r, { once: true }));
 
 async function seek(v, t) {
@@ -75,11 +103,30 @@ export async function render(primed, segments, { onProgress = () => {}, isCancel
   canvas.width = outW;
   canvas.height = outH;
   const g = canvas.getContext("2d");
-  const draw = (v) => {
+  const crop = (v) => {
     const w = v.videoWidth || srcW, h = v.videoHeight || srcH;
     let cw = w, ch = Math.round(w * 16 / 9);
     if (ch > h) { ch = h; cw = Math.round(h * 9 / 16); }
-    g.drawImage(v, (w - cw) / 2, (h - ch) / 2, cw, ch, 0, 0, outW, outH);
+    return [(w - cw) / 2, (h - ch) / 2, cw, ch];
+  };
+
+  // iPhones won't let web apps lock exposure, so sections can come out a little brighter or darker.
+  // Measure each take's brightness and nudge them all toward the middle one.
+  const shade = await brightnessFactors(players, segments, crop);
+  let factor = 1;
+  const draw = (v) => {
+    g.globalCompositeOperation = "source-over";
+    g.globalAlpha = 1;
+    g.drawImage(v, ...crop(v), 0, 0, outW, outH);
+    if (factor > 1.01) { // add a share of the picture on top of itself
+      g.globalCompositeOperation = "lighter";
+      g.globalAlpha = factor - 1;
+      g.drawImage(v, ...crop(v), 0, 0, outW, outH);
+    } else if (factor < 0.99) { // lay a little black over it
+      g.globalAlpha = 1 - factor;
+      g.fillStyle = "#000";
+      g.fillRect(0, 0, outW, outH);
+    }
   };
 
   const mime = pickMime();
@@ -95,6 +142,7 @@ export async function render(primed, segments, { onProgress = () => {}, isCancel
   for (const seg of segments) {
     if (isCancelled()) break;
     const v = players[seg.take];
+    factor = shade[seg.take] ?? 1;
     await seek(v, seg.start);
     draw(v);
     const level = seg.gain ?? 1;

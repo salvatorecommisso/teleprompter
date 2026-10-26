@@ -69,6 +69,9 @@ async function eraseScript(s) {
   if (s.source === "local") { local = local.filter((x) => x.id !== s.id); await saveLocal(); }
   else { const h = store.get("hidden", {}); h[s.id] = { body: s.body, at: s.deletedAt, gone: true }; store.set("hidden", h); }
   await store.clearTakes(s.id);
+  for (const k of await store.idb.keys("finished").catch(() => [])) {
+    if ((await store.idb.get("finished", k))?.scriptId === s.id) await store.idb.del("finished", k);
+  }
   const p = store.get("progress", {});
   delete p[s.id];
   store.set("progress", p);
@@ -326,7 +329,8 @@ async function renderLibrary() {
       const box = document.createElement("div");
       box.className = "confirm";
       box.innerHTML = '<p></p><div class="row"><button class="btn" type="button">Keep it</button><button class="btn danger" type="button">Delete</button></div>';
-      box.querySelector("p").textContent = `Delete “${s.title}”? It moves to Recently deleted, where you can restore it for 30 days.`;
+      const vids = unsavedVideo[s.id] ? " Its unsaved video goes with it." : "";
+      box.querySelector("p").textContent = `Delete “${s.title}”? It moves to Recently deleted, where you can restore it for 30 days.${vids}`;
       const [no, yes] = box.querySelectorAll("button");
       no.onclick = () => box.remove();
       yes.onclick = async () => { await deleteScript(s); renderLibrary(); };
@@ -341,8 +345,14 @@ async function renderLibrary() {
 let binPicked = null; // Set of picked script ids while selecting, otherwise null
 const binKey = (s) => s.source + ":" + s.id;
 
-function renderDeleted() {
+async function renderDeleted() {
+  renderFinished();
   const items = deletedScripts();
+  const unsavedBy = {};
+  for (const k of await store.idb.keys("finished").catch(() => [])) {
+    const v = await store.idb.get("finished", k);
+    if (v && !v.saved) unsavedBy[v.scriptId] = (unsavedBy[v.scriptId] || 0) + 1;
+  }
   const box = $("deletedBox");
   box.hidden = !items.length;
   if (!items.length) { binPicked = null; return; }
@@ -358,7 +368,8 @@ function renderDeleted() {
     const li = document.createElement("li");
     li.innerHTML = '<span class="tick" aria-hidden="true"></span><div class="info"><div class="t"></div><div class="s"></div></div><button class="btn small" type="button">Restore</button><button class="btn small danger" type="button">Delete now</button>';
     li.querySelector(".t").textContent = s.title;
-    li.querySelector(".s").textContent = `${days} day${days === 1 ? "" : "s"} left`;
+    const vids = unsavedBy[s.id] || 0;
+    li.querySelector(".s").textContent = `${days} day${days === 1 ? "" : "s"} left` + (vids ? ` · includes ${vids} unsaved video${vids === 1 ? "" : "s"}` : "");
     const [restore, now] = li.querySelectorAll("button");
     if (binPicked) {
       restore.remove(); now.remove();
@@ -481,9 +492,10 @@ function lockable() {
 function showCameraLocks() {
   const names = { exposureMode: "exposure", whiteBalanceMode: "colour", focusMode: "focus" };
   const ok = lockable();
-  $("lockInfo").textContent = ok.length
-    ? `This phone lets the app lock ${ok.map((k) => names[k]).join(", ")} while you record.`
-    : "This phone's browser doesn't let web apps lock exposure, so brightness can shift a little between sections. Steady lighting from the front helps most.";
+  const list = ok.map((k) => names[k]);
+  const words = list.length > 1 ? list.slice(0, -1).join(", ") + " and " + list[list.length - 1] : list[0];
+  $("lockInfo").textContent = (ok.length ? `On this phone the app can lock ${words}.` : "This phone doesn't let web apps lock camera settings.")
+    + (ok.includes("exposureMode") ? "" : " Brightness can't be locked here, so the app evens it out between sections when it joins them. Steady light from the front helps too.");
 }
 async function setCameraLocks(on) {
   const t = stream?.getVideoTracks()[0];
@@ -796,7 +808,8 @@ $("sectionChip").onclick = () => {
   });
   $("secTitle").textContent = script.title;
   $("secFinish").disabled = !Object.keys(takes).length;
-  $("secRedo").hidden = !Object.keys(takes).length;
+  const pr = store.get("progress", {})[script.id] || {};
+  $("secRedo").hidden = !Object.keys(takes).length && !pr.recorded && !pr.saved && !pr.sent;
   $("secRedoBox").hidden = true;
   openSheet("secSheet");
 };
@@ -1247,10 +1260,27 @@ async function storageWarning() {
   if (note) msg.textContent = note;
 }
 
+// Worked out fresh every time from the scripts as they are now:
+// - videos of deleted scripts wait in Recently deleted with their script
+// - an unsaved video only counts while its script is still complete (not re-recording)
 async function renderFinished() {
   const keys = (await store.idb.keys("finished").catch(() => [])).sort();
+  const takeKeys = await store.idb.keys("takes").catch(() => []);
+  const progress = store.get("progress", {});
+  const binned = new Set(deletedScripts().map((s) => s.id));
+  const live = new Set(allScripts().map((s) => s.id));
+  const complete = (id) => {
+    if (!live.has(id)) return true; // script no longer listed: keep its video
+    const kept = takeKeys.filter((k) => k.startsWith(id + "|")).length;
+    return ["ready", "saved"].includes(statusOf(progress[id] || {}, kept));
+  };
   const items = [];
-  for (const k of keys) items.push({ key: k, ...(await store.idb.get("finished", k)) });
+  for (const k of keys) {
+    const v = await store.idb.get("finished", k);
+    if (!v || binned.has(v.scriptId)) continue;
+    if (!v.saved && !complete(v.scriptId)) continue;
+    items.push({ key: k, ...v });
+  }
   $("finishedBox").hidden = !items.length;
   $("clearBox").hidden = true;
   if (!items.length) return [];
