@@ -179,21 +179,24 @@ async function renderLibrary() {
     list.innerHTML = '<div class="empty">No scripts yet.<br>Ask Claude to write one, or tap New to type one here.</div>';
     return;
   }
-  const order = (s) => (progress[s.id]?.sent ? 1 : 0);
+  const order = (s) => (progress[s.id]?.saved ? 1 : 0);
   items.sort((a, b) => order(a) - order(b));
   for (const s of items) {
     const secs = splitSections(s.body);
     const kept = takeKeys.filter((k) => k.startsWith(s.id + "|")).length;
     const seconds = Math.round(wordCount(s.body) / 2.6);
     const card = document.createElement("div");
-    card.className = "card" + (progress[s.id]?.sent ? " done" : "");
+    card.className = "card" + (progress[s.id]?.saved ? " done" : "");
     card.tabIndex = 0;
     card.innerHTML = '<div class="info"><div class="t"></div><div class="s"></div></div><span class="state"></span>';
     card.querySelector(".t").textContent = s.title;
     card.querySelector(".s").textContent = `${secs.length} section${secs.length === 1 ? "" : "s"} · about ${seconds} s${s.source === "local" ? " · on this phone" : ""}`;
     const state = card.querySelector(".state");
-    if (progress[s.id]?.sent) { state.textContent = "Done"; state.classList.add("sent"); }
-    else if (kept) { state.textContent = `${kept}/${secs.length} recorded`; state.classList.add("partial"); }
+    // Done = saved to the camera roll. Recorded = video made (or sections taken) but not saved yet.
+    const pr = progress[s.id] || {};
+    if (pr.saved) { state.textContent = "Done"; state.classList.add("sent"); }
+    else if (pr.recorded || pr.sent) { state.textContent = "Recorded"; state.classList.add("partial"); }
+    else if (kept) { state.textContent = `Recorded ${kept}/${secs.length}`; state.classList.add("partial"); }
     else state.textContent = "New";
     card.onclick = () => openStudio(s);
     card.onkeydown = (e) => e.key === "Enter" && openStudio(s);
@@ -648,6 +651,7 @@ $("takeKeep").onclick = async () => {
   closeTake();
   takes[sectionIndex] = pendingTake;
   pendingTake = null;
+  setProgress(script.id, { saved: false, recorded: false, sent: false }); // a new take starts the script over
   const next = sections.findIndex((_, i) => !takes[i]);
   if (next !== -1) cameraBack();
   await store.idb.put("takes", store.takeKey(script.id, sectionIndex), takes[sectionIndex]);
@@ -877,10 +881,14 @@ $("saveBtn").onclick = async () => {
 
 $("saveAfter").onclick = async () => { if (rendered && (await shareVideo(rendered))) markSaved(); };
 
-function markSaved() {
+function setProgress(id, patch) {
   const p = store.get("progress", {});
-  p[script.id] = { ...(p[script.id] || {}), saved: true, sent: p[script.id]?.sent || !drive.configured() };
+  p[id] = { ...(p[id] || {}), ...patch };
   store.set("progress", p);
+}
+
+function markSaved() {
+  setProgress(script.id, { saved: true, recorded: true });
 }
 
 $("keepBtn").onclick = async () => {
@@ -909,9 +917,7 @@ function showDone(uploaded, kept = false) {
   $("saveAfter").hidden = kept;
   $("saveAfter").textContent = uploaded ? "Also save to camera roll" : "Save to camera roll";
   if (uploaded) {
-    const p = store.get("progress", {});
-    p[script.id] = { ...(p[script.id] || {}), sent: true };
-    store.set("progress", p);
+    setProgress(script.id, { recorded: true });
     store.clearTakes(script.id);
   }
 }
@@ -925,9 +931,8 @@ $("finalBack").onclick = async () => {
 };
 
 $("nextScript").onclick = async () => {
-  const p = store.get("progress", {});
-  if (p[script.id]?.saved || p[script.id]?.sent) await store.clearTakes(script.id);
-  if (!drive.configured()) { p[script.id] = { ...(p[script.id] || {}), sent: !!(p[script.id]?.saved || p[script.id]?.sent) }; store.set("progress", p); }
+  const p = store.get("progress", {})[script.id] || {};
+  if (p.saved || p.recorded) await store.clearTakes(script.id);
   openLibrary();
 };
 
@@ -990,9 +995,11 @@ $("saveAll").onclick = async () => {
   for (const i of batch) {
     const { key, ...rest } = i;
     await store.idb.put("finished", key, { ...rest, saved: true });
+    setProgress(i.scriptId, { saved: true });
   }
   if (!msg.textContent) msg.textContent = `Saved ${batch.length} video${batch.length === 1 ? "" : "s"}. Check Photos, then clear them here to free up space.`;
   renderFinished();
+  renderLibrary();
 };
 
 $("clearSaved").onclick = () => ($("clearBox").hidden = false);
@@ -1024,9 +1031,7 @@ async function refreshOutboxNote() {
         note.querySelector("span").textContent = `Uploading "${item.name}"…`;
         await drive.upload(item.blob, item.name, item.mime, (f) => (note.querySelector("span").textContent = `Uploading "${item.name}"… ${Math.round(f * 100)}%`));
         await store.idb.del("outbox", k);
-        const p = store.get("progress", {});
-        p[item.scriptId] = { ...(p[item.scriptId] || {}), sent: true };
-        store.set("progress", p);
+        setProgress(item.scriptId, { recorded: true });
         await store.clearTakes(item.scriptId);
       }
       refreshOutboxNote();
