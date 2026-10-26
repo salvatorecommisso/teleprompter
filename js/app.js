@@ -39,17 +39,43 @@ function ctx() {
 const splitSections = (body) => body.split(/\n\s*\n/).map((s) => s.trim()).filter(Boolean);
 const wordCount = (t) => (t.match(/\S+/g) || []).length;
 const fmtTime = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
-// Claude's scripts deleted on this phone, kept as id → text so a rewritten version shows up again.
-const isHidden = (s) => store.get("hidden", {})[s.id] === s.body;
-const allScripts = () => [...synced.filter((s) => !isHidden(s)).map((s) => ({ ...s, source: "synced" })), ...local.map((s) => ({ ...s, source: "local" }))];
+// Deleted scripts sit in "Recently deleted" for 30 days, with their takes, before they're gone for good.
+// Claude's scripts are remembered as id → { body, at } so a rewritten version shows up again.
+// Phone scripts get a deletedAt and stay in the sealed local list until then.
+const KEEP_DELETED_MS = 30 * 864e5;
+const hiddenEntry = (s) => {
+  const h = store.get("hidden", {})[s.id];
+  return typeof h === "string" ? { body: h, at: 0, gone: true } : h; // older format: already gone
+};
+const isHidden = (s) => hiddenEntry(s)?.body === s.body;
+const allScripts = () => [...synced.filter((s) => !isHidden(s)).map((s) => ({ ...s, source: "synced" })), ...local.filter((s) => !s.deletedAt).map((s) => ({ ...s, source: "local" }))];
+const deletedScripts = () => [
+  ...synced.filter((s) => isHidden(s) && !hiddenEntry(s).gone).map((s) => ({ ...s, source: "synced", deletedAt: hiddenEntry(s).at })),
+  ...local.filter((s) => s.deletedAt).map((s) => ({ ...s, source: "local" })),
+].sort((a, b) => b.deletedAt - a.deletedAt);
 
 async function deleteScript(s) {
+  const at = Date.now();
+  if (s.source === "local") { local.find((x) => x.id === s.id).deletedAt = at; await saveLocal(); }
+  else store.set("hidden", { ...store.get("hidden", {}), [s.id]: { body: s.body, at } });
+}
+
+async function restoreScript(s) {
+  if (s.source === "local") { delete local.find((x) => x.id === s.id).deletedAt; await saveLocal(); }
+  else { const h = store.get("hidden", {}); delete h[s.id]; store.set("hidden", h); }
+}
+
+async function eraseScript(s) {
   if (s.source === "local") { local = local.filter((x) => x.id !== s.id); await saveLocal(); }
-  else store.set("hidden", { ...store.get("hidden", {}), [s.id]: s.body });
+  else { const h = store.get("hidden", {}); h[s.id] = { body: s.body, at: s.deletedAt, gone: true }; store.set("hidden", h); }
   await store.clearTakes(s.id);
   const p = store.get("progress", {});
   delete p[s.id];
   store.set("progress", p);
+}
+
+async function emptyOldDeleted() {
+  for (const s of deletedScripts()) if (Date.now() - s.deletedAt > KEEP_DELETED_MS) await eraseScript(s);
 }
 
 // ---------- screen wake lock ----------
@@ -138,6 +164,7 @@ async function openLibrary() {
   const box = store.get("localBox");
   try { local = box ? await vaultLib.openLocal(session, box) : []; } catch { local = []; }
   await useSyncedFile(store.get("syncedFile"));
+  await emptyOldDeleted();
   renderLibrary();
   refreshOutboxNote();
   renderFinished();
@@ -228,6 +255,7 @@ async function renderLibrary() {
   if (!items.length) {
     $("filterBar").textContent = "";
     list.innerHTML = '<div class="empty">No scripts yet.<br>Ask Claude to write one, or tap New to type one here.</div>';
+    renderDeleted();
     return;
   }
   const order = (s) => (progress[s.id]?.saved ? 1 : 0);
@@ -296,7 +324,7 @@ async function renderLibrary() {
       const box = document.createElement("div");
       box.className = "confirm";
       box.innerHTML = '<p></p><div class="row"><button class="btn" type="button">Keep it</button><button class="btn danger" type="button">Delete</button></div>';
-      box.querySelector("p").textContent = `Delete “${s.title}” and its recorded sections from this phone?`;
+      box.querySelector("p").textContent = `Delete “${s.title}”? It moves to Recently deleted, where you can restore it for 30 days.`;
       const [no, yes] = box.querySelectorAll("button");
       no.onclick = () => box.remove();
       yes.onclick = async () => { await deleteScript(s); renderLibrary(); };
@@ -305,7 +333,76 @@ async function renderLibrary() {
     card.appendChild(del);
     list.appendChild(card);
   }
+  renderDeleted();
 }
+
+let binPicked = null; // Set of picked script ids while selecting, otherwise null
+const binKey = (s) => s.source + ":" + s.id;
+
+function renderDeleted() {
+  const items = deletedScripts();
+  const box = $("deletedBox");
+  box.hidden = !items.length;
+  if (!items.length) { binPicked = null; return; }
+  if (binPicked) for (const k of binPicked) if (!items.some((s) => binKey(s) === k)) binPicked.delete(k);
+  $("deletedTitle").textContent = `Recently deleted (${items.length})`;
+  $("binSelect").textContent = binPicked ? "Cancel" : "Select";
+  $("binBar").hidden = !binPicked;
+  const ul = $("deletedList");
+  ul.classList.toggle("picking", !!binPicked);
+  ul.textContent = "";
+  for (const s of items) {
+    const days = Math.max(1, Math.ceil((s.deletedAt + KEEP_DELETED_MS - Date.now()) / 864e5));
+    const li = document.createElement("li");
+    li.innerHTML = '<span class="tick" aria-hidden="true"></span><div class="info"><div class="t"></div><div class="s"></div></div><button class="btn small" type="button">Restore</button><button class="btn small danger" type="button">Delete now</button>';
+    li.querySelector(".t").textContent = s.title;
+    li.querySelector(".s").textContent = `${days} day${days === 1 ? "" : "s"} left`;
+    const [restore, now] = li.querySelectorAll("button");
+    if (binPicked) {
+      restore.remove(); now.remove();
+      const on = binPicked.has(binKey(s));
+      li.classList.toggle("on", on);
+      li.setAttribute("role", "checkbox"); li.setAttribute("aria-checked", on); li.tabIndex = 0;
+      li.onclick = () => { on ? binPicked.delete(binKey(s)) : binPicked.add(binKey(s)); renderDeleted(); };
+    } else {
+      restore.onclick = async () => { await restoreScript(s); renderLibrary(); };
+      now.onclick = async () => {
+        if (now.dataset.sure !== "1") { now.dataset.sure = "1"; now.textContent = "Tap again to erase"; return; }
+        await eraseScript(s);
+        renderLibrary();
+      };
+    }
+    ul.appendChild(li);
+  }
+  if (binPicked) {
+    const n = binPicked.size;
+    $("binAll").textContent = n === items.length ? "Select none" : "Select all";
+    $("binRestore").textContent = `Restore${n ? " " + n : ""}`;
+    $("binErase").textContent = `Delete${n ? " " + n : ""}`;
+    $("binRestore").disabled = $("binErase").disabled = !n;
+    delete $("binErase").dataset.sure;
+  }
+}
+
+const pickedDeleted = () => deletedScripts().filter((s) => binPicked?.has(binKey(s)));
+$("binSelect").onclick = (e) => { e.preventDefault(); $("deletedBox").open = true; binPicked = binPicked ? null : new Set(); renderDeleted(); };
+$("binAll").onclick = () => {
+  const items = deletedScripts();
+  binPicked = new Set(binPicked.size === items.length ? [] : items.map(binKey));
+  renderDeleted();
+};
+$("binRestore").onclick = async () => {
+  for (const s of pickedDeleted()) await restoreScript(s);
+  binPicked = null;
+  renderLibrary();
+};
+$("binErase").onclick = async () => {
+  const btn = $("binErase");
+  if (btn.dataset.sure !== "1") { btn.dataset.sure = "1"; btn.textContent = `Erase ${binPicked.size} for good?`; return; }
+  for (const s of pickedDeleted()) await eraseScript(s);
+  binPicked = null;
+  renderLibrary();
+};
 
 $("refresh").onclick = () => fetchScripts(true);
 $("newScript").onclick = () => openEditor(null);
