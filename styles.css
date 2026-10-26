@@ -94,6 +94,10 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .card .state.partial { background: #3a2d10; color: var(--accent); }
 .card .state.sent { background: #123222; color: var(--ok); }
 .card.done { opacity: 0.6; }
+.filters { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 10px; scrollbar-width: none; }
+.filters::-webkit-scrollbar { display: none; }
+.filter { flex: none; background: var(--panel); border: 1px solid var(--line); color: var(--muted); border-radius: 999px; padding: 6px 12px; font: 600 14px var(--font); font-variant-numeric: tabular-nums; }
+.filter.on { background: var(--text); border-color: var(--text); color: var(--bg); }
 .empty { text-align: center; color: var(--muted); padding: 40px 12px; border: 1px dashed var(--line); border-radius: 14px; }
 
 /* Studio */
