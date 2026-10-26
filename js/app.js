@@ -8,7 +8,7 @@ import { pickMime, extFor, primePlayers, releasePlayers, render } from "./render
 const $ = (id) => document.getElementById(id);
 
 // ---------- settings ----------
-const DEFAULTS = { mode: "follow", speed: 4, size: 30, guides: "all", center: true, mirror: true, flip: false, countdown: true, sens: 50, micId: "" };
+const DEFAULTS = { mode: "follow", speed: 4, size: 30, guides: "all", center: true, mirror: true, flip: false, sens: 50, micId: "" };
 const settings = { ...DEFAULTS, ...store.get("settings", {}) };
 const saveSettings = () => store.set("settings", settings);
 const pxPerSecond = () => 12 + settings.speed * 9;
@@ -389,7 +389,7 @@ prompter.onTap = () => {
 function applySettings() {
   prompter.mode = settings.mode;
   prompter.speed = pxPerSecond();
-  $("promptText").style.setProperty("--fs", settings.size + "px");
+  $("studio").style.setProperty("--fs", settings.size + "px");
   $("prompt").classList.toggle("flip", settings.flip);
   $("cam").classList.toggle("mirror", settings.mirror);
   $("speedVal").textContent = "Speed " + settings.speed;
@@ -505,7 +505,6 @@ $("settingsBtn").onclick = () => {
   $("setCenter").checked = settings.center;
   $("setMirror").checked = settings.mirror;
   $("setFlip").checked = settings.flip;
-  $("setCount").checked = settings.countdown;
   openSheet("setSheet");
 };
 const bindSetting = (id, key, prop = "value", conv = (v) => v) => ($(id).onchange = () => { settings[key] = conv($(id)[prop]); saveSettings(); applySettings(); });
@@ -515,7 +514,6 @@ bindSetting("setGuides", "guides");
 bindSetting("setCenter", "center", "checked");
 bindSetting("setMirror", "mirror", "checked");
 bindSetting("setFlip", "flip", "checked");
-bindSetting("setCount", "countdown", "checked");
 $("setClose").onclick = closeSheets;
 $("setMic").onclick = async () => { await fillMicList(); openSheet("micSheet"); };
 $("setCode").onclick = () => { stopCamera(); showSetupCode(false); };
@@ -542,19 +540,19 @@ $("secClose").onclick = closeSheets;
 $("secFinish").onclick = () => { closeSheets(); openFinal(); };
 
 // ---------- recording one section ----------
-let recorder = null, chunks = [], recStart = 0, recElapsed = 0, recPaused = false, timerId = 0, counting = false;
-const isRecording = () => counting || (recorder && recorder.state !== "inactive");
+let recorder = null, chunks = [], recStart = 0, recElapsed = 0, recPaused = false, timerId = 0;
+const isRecording = () => recorder && recorder.state !== "inactive";
 
 function setRecUi() {
   const on = isRecording();
   $("recBtn").classList.toggle("on", on);
   $("recBtn").classList.toggle("paused", recPaused);
   $("recBtn").setAttribute("aria-label", on ? "Stop" : "Record");
-  $("pauseBtn").disabled = !on || counting;
-  $("doneBtn").disabled = !on || counting;
+  $("pauseBtn").disabled = !on;
+  $("doneBtn").disabled = !on;
   $("pauseBtn").textContent = recPaused ? "▶" : "❚❚";
   $("pauseBtn").setAttribute("aria-label", recPaused ? "Resume" : "Pause");
-  $("recTimer").hidden = !on || counting;
+  $("recTimer").hidden = !on;
   $("backBtn").disabled = on;
 }
 
@@ -573,16 +571,6 @@ $("recBtn").onclick = async () => {
   if (!cameraLive()) { try { await startCamera(); } catch (e) { return toast("The camera didn't start: " + e.message); } }
   closeSheets();
   prompter.reset();
-  if (settings.countdown) {
-    counting = true; setRecUi();
-    for (const n of [3, 2, 1]) {
-      $("countdown").textContent = n; $("countdown").hidden = false;
-      await new Promise((r) => setTimeout(r, 800));
-      if (!counting) { $("countdown").hidden = true; return setRecUi(); }
-    }
-    $("countdown").hidden = true;
-    counting = false;
-  }
   const mime = pickMime();
   chunks = [];
   recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 8_000_000, audioBitsPerSecond: 160_000 });
@@ -617,7 +605,6 @@ $("pauseBtn").onclick = () => {
 $("doneBtn").onclick = () => stopRecording();
 
 function stopRecording() {
-  if (counting) { counting = false; return; }
   if (!recorder || recorder.state === "inactive") return;
   if (!recPaused) recElapsed += (performance.now() - recStart) / 1000;
   recPaused = false;
