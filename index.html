@@ -55,6 +55,19 @@
   </header>
   <p id="syncNote" class="muted pad note"></p>
   <div id="outboxNote" class="banner pad" hidden></div>
+  <div id="finishedBox" class="finished pad" hidden>
+    <div class="finished-head"><h2 id="finishedTitle">Finished videos</h2><span id="finishedSize" class="muted"></span></div>
+    <ul id="finishedList" class="finished-list"></ul>
+    <div class="row">
+      <button id="saveAll" class="btn primary" type="button">Save all to camera roll</button>
+      <button id="clearSaved" class="btn" type="button">Clear saved videos</button>
+    </div>
+    <p id="finishedMsg" class="muted small-text" role="status"></p>
+    <div id="clearBox" class="confirm" hidden>
+      <p id="clearText">Remove the videos you've already saved from this app? They stay in your camera roll.</p>
+      <div class="row"><button id="clearNo" class="btn" type="button">Keep them</button><button id="clearYes" class="btn danger" type="button">Remove</button></div>
+    </div>
+  </div>
   <div id="scriptList" class="list pad"></div>
 </section>
 
@@ -179,7 +192,8 @@
     <div id="progressBox" class="progress" hidden><div class="progress-bar"><div id="progressBar"></div></div><p id="progressText"></p></div>
     <div id="finalActions" class="stack">
       <button id="sendBtn" class="btn primary wide" type="button">OK, send to Google Drive</button>
-      <button id="saveBtn" class="btn wide" type="button">Save to camera roll</button>
+      <button id="keepBtn" class="btn primary wide" type="button">Keep for later</button>
+      <button id="saveBtn" class="btn wide" type="button">Save to camera roll now</button>
       <button id="finalBack" class="btn wide ghost" type="button">Back to sections</button>
     </div>
     <div id="doneActions" class="stack" hidden>

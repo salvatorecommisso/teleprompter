@@ -15,7 +15,8 @@ A teleprompter and 9:16 video recorder that runs in Safari on iPhone. You record
 - **Mic check:** this screen opens with each script. It shows which mic is in use and a live level bar, and lets you test voice-following.
 - **Scrolling:** *Follow voice* moves the script to the words you're saying. *Talk scroll* scrolls only while you're talking. *Steady* scrolls at a fixed speed. Drag the text to move it by hand.
 - **Recording:** Record starts right away, then Pause/Resume and Done. After each section you choose Keep or Retake. Recording a section again replaces the old take.
-- **Finish:** trim silences (Gentle to Tight), preview, then **OK, send to Google Drive** or **Save to camera roll**.
+- **Finish:** trim silences (Gentle to Tight), preview, then **Keep for later**, **OK, send to Google Drive** or **Save to camera roll now**.
+- **Finished videos:** kept videos wait on the Scripts page. **Save all to camera roll** saves them in one go (choose Save Videos), then **Clear saved** frees up space.
 
 ## Google Drive setup (one time, about 10 minutes)
 
