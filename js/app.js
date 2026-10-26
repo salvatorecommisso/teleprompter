@@ -284,6 +284,8 @@ async function renderLibrary() {
     const seconds = Math.round(wordCount(s.body) / 2.6);
     const card = document.createElement("div");
     card.className = "card" + (progress[s.id]?.saved ? " done" : "");
+    card.dataset.status = s.status;
+    card.style.setProperty("--i", list.children.length);
     card.tabIndex = 0;
     card.innerHTML = '<div class="info"><div class="t"></div><div class="s"></div><span class="state"></span></div>';
     card.querySelector(".t").textContent = s.title;
@@ -309,7 +311,7 @@ async function renderLibrary() {
         e.stopPropagation();
         save.disabled = true;
         const n = await saveToCameraRoll([unsavedVideo[s.id]]);
-        if (n) $("finishedMsg").textContent = `Saved “${s.title}”. Check Photos.`;
+        if (n) { $("finishedMsg").textContent = `Saved “${s.title}”. Check Photos.`; savedPop(); }
         save.disabled = false;
         renderFinished();
         renderLibrary();
@@ -1268,6 +1270,7 @@ async function renderFinished() {
     ul.appendChild(li);
   }
   const already = $("saveAll").dataset.started === "1";
+  $("saveAll").classList.toggle("primary", unsaved.length > 0);
   $("saveAll").textContent = !unsaved.length ? "Save all again"
     : unsaved.length === 1 ? "Save it to camera roll"
     : unsaved.length <= SAVE_LIMIT ? `Save ${already ? "the last " : "all "}${unsaved.length} to camera roll`
@@ -1276,6 +1279,14 @@ async function renderFinished() {
   $("clearSaved").hidden = !savedCount;
   $("clearSaved").textContent = `Clear ${savedCount} saved`;
   return items;
+}
+
+// A little check mark pops in next to the saved message.
+function savedPop() {
+  const m = $("finishedMsg");
+  m.classList.remove("pop");
+  void m.offsetWidth; // restart the animation
+  m.classList.add("pop");
 }
 
 // Opens the share sheet (Save Videos) for these finished videos and marks the ones that went through.
@@ -1323,6 +1334,7 @@ $("saveAll").onclick = async () => {
   batch = batch.slice(0, n);
   const msg = $("finishedMsg");
   const left = items.filter((i) => !i.saved).length - batch.length;
+  savedPop();
   if (!msg.textContent) msg.textContent = left > 0
     ? `Saved ${batch.length}. ${left} more waiting: tap the button again.`
     : `Saved ${batch.length} video${batch.length === 1 ? "" : "s"}. Check Photos, then clear them here to free up space.`;
