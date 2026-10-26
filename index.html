@@ -101,6 +101,10 @@
       <button id="backBtn" class="chip" type="button" aria-label="Back to scripts">‹ Scripts</button>
       <button id="sectionChip" class="chip" type="button">Section 1 of 1</button>
       <span id="recTimer" class="chip rec" hidden>● 0:00</span>
+      <button id="micChip" class="chip mic-chip" type="button" aria-label="Microphone level. Tap for mic settings.">
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-2.1A7 7 0 0 0 19 12h-2Z" fill="currentColor"/></svg>
+        <span class="bars" id="micBars"><i></i><i></i><i></i><i></i><i></i></span>
+      </button>
     </div>
     <div id="studioMsg" class="toast" role="status" hidden></div>
   </div>
@@ -116,14 +120,13 @@
     <div class="row main">
       <button id="pauseBtn" class="round" type="button" aria-label="Pause" disabled>❚❚</button>
       <button id="recBtn" class="record" type="button" aria-label="Record"><span></span></button>
-      <button id="doneBtn" class="round" type="button" aria-label="Done" disabled>Done</button>
+      <span class="round spacer" aria-hidden="true"></span>
     </div>
   </div>
 
-  <!-- Mic check -->
-  <div id="micSheet" class="sheet" hidden>
-    <h2>Mic check</h2>
-    <p class="muted">Say a few words. The bar should move when you talk.</p>
+  <!-- Settings -->
+  <div id="setSheet" class="sheet" hidden>
+    <h2>Settings</h2>
     <div class="mic-name"><span class="lbl">Mic in use</span><strong id="micName">…</strong></div>
     <div class="meter" aria-hidden="true"><div id="micLevel"></div></div>
     <label for="micPick" class="lbl">Switch mic</label>
@@ -132,18 +135,14 @@
       <button id="voiceTest" class="btn small" type="button">Test voice-following</button>
       <p id="voiceOut" class="muted small-text"></p>
     </div>
-    <button id="micOk" class="btn primary wide" type="button">Sounds good</button>
-  </div>
-
-  <!-- Settings -->
-  <div id="setSheet" class="sheet" hidden>
-    <h2>Settings</h2>
     <label class="lbl" for="setMode">Script scrolling</label>
     <select id="setMode">
       <option value="follow">Follow my voice</option>
       <option value="talk">Scroll while I talk</option>
       <option value="steady">Steady scroll</option>
     </select>
+    <label class="lbl" for="setLift">Script height <span class="muted">(slide right to move it up toward the camera)</span></label>
+    <input id="setLift" type="range" min="0" max="100">
     <label class="lbl" for="setSens">Voice sensitivity <span class="muted">(for Scroll while I talk)</span></label>
     <input id="setSens" type="range" min="0" max="100">
     <label class="lbl" for="setGuides">Framing guide</label>
@@ -157,7 +156,7 @@
     <label class="check"><input id="setCenter" type="checkbox"> Center lines</label>
     <label class="check"><input id="setMirror" type="checkbox"> Mirror my preview (like a selfie)</label>
     <label class="check"><input id="setFlip" type="checkbox"> Flip the script text (for a mirror teleprompter)</label>
-    <div class="row"><button id="setMic" class="btn small" type="button">Mic check</button><button id="setCode" class="btn small" type="button">Setup code</button><button id="setLock" class="btn small" type="button">Lock</button></div>
+    <div class="row"><button id="setCode" class="btn small" type="button">Setup code</button><button id="setLock" class="btn small" type="button">Lock</button></div>
     <button id="setClose" class="btn primary wide" type="button">Done</button>
   </div>
 

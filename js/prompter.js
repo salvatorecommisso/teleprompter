@@ -76,7 +76,9 @@ export class Prompter {
   }
 
   // The line being read is the top line of the band, right under the camera.
-  readingLine() { return parseFloat(getComputedStyle(this.content).fontSize) * 0.66 + 6; }
+  lineHeight() { return parseFloat(getComputedStyle(this.content).fontSize) * 1.32; }
+
+  readingLine() { return parseFloat(getComputedStyle(this.content).fontSize) * 0.66 + 2; }
 
   apply() {
     const max = Math.max(0, this.content.scrollHeight - this.readingLine());
@@ -89,7 +91,18 @@ export class Prompter {
     this.last = t;
     if (this.running && !this.dragging) {
       if (this.mode === "follow") {
-        if (this.target != null) this.y += (this.target - this.y) * Math.min(1, dt * 6);
+        const lh = this.lineHeight();
+        if (this.target != null) {
+          // Catch up quickly, but don't pull back a nudge-ahead unless you jumped back a real distance.
+          const d = this.target - this.y;
+          if (d > 0 || d < -1.5 * lh) this.y += d * Math.min(1, dt * 12);
+        }
+        // Speech recognition lags about half a second, so while you're talking the script
+        // creeps ahead on its own, never more than one line past the last word it heard.
+        if (this.voiceActive) {
+          const cap = (this.target ?? 0) + lh * 0.9;
+          if (this.y < cap) this.y = Math.min(cap, this.y + this.speed * 0.6 * dt);
+        }
       } else if (this.mode === "steady" || (this.mode === "talk" && this.voiceActive)) {
         this.y += this.speed * dt;
       }
@@ -143,9 +156,13 @@ export class Prompter {
       if (better) { best = j; bestScore = score; }
     }
     if (best < 0) return;
-    const nearby = best >= this.cursor - 1 && best <= this.cursor + 4;
-    const goingBack = best < this.cursor - 1;
-    if (bestScore >= 3 || (bestScore >= 2 && !goingBack) || (bestScore === 1 && nearby && heard[heard.length - 1].length >= 3)) {
+    // A single heard word is enough when it's just ahead of where you are,
+    // so the script moves on the first word instead of waiting for a phrase.
+    const len = heard[heard.length - 1].length;
+    const ahead = best - this.cursor;
+    const nearby = ahead >= -1 && ahead <= (len >= 3 ? 6 : 2);
+    const goingBack = ahead < -1;
+    if (bestScore >= 3 || (bestScore >= 2 && !goingBack) || (bestScore === 1 && nearby && len >= 2)) {
       this.cursor = best + 1;
       for (let i = 0; i < this.spans.length; i++) this.spans[i].classList.toggle("said", i <= best);
       const s = this.spans[best];
