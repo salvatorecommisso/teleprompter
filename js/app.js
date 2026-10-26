@@ -129,6 +129,7 @@ async function openLibrary() {
   await useSyncedFile(store.get("syncedFile"));
   renderLibrary();
   refreshOutboxNote();
+  renderFinished();
   fetchScripts();
 }
 
@@ -684,7 +685,9 @@ async function openFinal() {
   $("progressBox").hidden = true;
   $("finalActions").hidden = false;
   $("doneActions").hidden = true;
-  $("sendBtn").textContent = drive.configured() ? "OK, send to Google Drive" : "Make the video";
+  $("sendBtn").hidden = !drive.configured();
+  $("saveBtn").textContent = "Save to camera roll now";
+  $("keepBtn").classList.toggle("primary", !drive.configured());
   const missing = sections.map((_, i) => i).filter((i) => !takes[i]);
   if (missing.length) $("finalMsg").textContent = `Section ${missing.map((i) => i + 1).join(", ")} has no take yet and will be left out.`;
   finalTakes = sections.map((_, i) => takes[i]).filter(Boolean);
@@ -801,7 +804,7 @@ async function makeVideo(primed) {
 }
 
 function busy(on) {
-  for (const id of ["sendBtn", "saveBtn", "finalBack", "trimOn", "trimStrength", "saveAfter", "nextScript"]) $(id).disabled = on;
+  for (const id of ["sendBtn", "keepBtn", "saveBtn", "finalBack", "trimOn", "trimStrength", "saveAfter", "nextScript"]) $(id).disabled = on;
 }
 
 $("sendBtn").onclick = async () => {
@@ -880,9 +883,30 @@ function markSaved() {
   store.set("progress", p);
 }
 
-function showDone(uploaded) {
+$("keepBtn").onclick = async () => {
+  stopPreview();
+  $("finalMsg").textContent = "";
+  const primed = rendered ? null : primePlayers(finalTakes, ctx());
+  busy(true);
+  try {
+    const video = await makeVideo(primed);
+    await store.idb.put("finished", "f" + Date.now(), {
+      blob: video.blob, name: fileName(extFor(video.mime)), mime: video.mime, scriptId: script.id, at: Date.now(), saved: false,
+    });
+    progress(1, "Kept. Save it with your other videos from Finished videos on the Scripts page.");
+    showDone(true, true);
+  } catch (err) {
+    $("finalMsg").textContent = err.message;
+    $("progressBox").hidden = true;
+  } finally {
+    busy(false);
+  }
+};
+
+function showDone(uploaded, kept = false) {
   $("finalActions").hidden = true;
   $("doneActions").hidden = false;
+  $("saveAfter").hidden = kept;
   $("saveAfter").textContent = uploaded ? "Also save to camera roll" : "Save to camera roll";
   if (uploaded) {
     const p = store.get("progress", {});
@@ -903,8 +927,83 @@ $("finalBack").onclick = async () => {
 $("nextScript").onclick = async () => {
   const p = store.get("progress", {});
   if (p[script.id]?.saved || p[script.id]?.sent) await store.clearTakes(script.id);
-  if (!drive.configured()) { p[script.id] = { ...(p[script.id] || {}), sent: !!p[script.id]?.saved }; store.set("progress", p); }
+  if (!drive.configured()) { p[script.id] = { ...(p[script.id] || {}), sent: !!(p[script.id]?.saved || p[script.id]?.sent) }; store.set("progress", p); }
   openLibrary();
+};
+
+// ---------- finished videos kept for a batch save ----------
+async function renderFinished() {
+  const keys = (await store.idb.keys("finished").catch(() => [])).sort();
+  const items = [];
+  for (const k of keys) items.push({ key: k, ...(await store.idb.get("finished", k)) });
+  $("finishedBox").hidden = !items.length;
+  $("clearBox").hidden = true;
+  if (!items.length) return [];
+  const unsaved = items.filter((i) => !i.saved);
+  const savedCount = items.length - unsaved.length;
+  const mb = items.reduce((t, i) => t + i.blob.size, 0) / 1e6;
+  $("finishedTitle").textContent = `Finished videos (${items.length})`;
+  $("finishedSize").textContent = mb >= 1000 ? `${(mb / 1000).toFixed(1)} GB` : `${Math.round(mb)} MB`;
+  const ul = $("finishedList");
+  ul.textContent = "";
+  for (const i of items) {
+    const li = document.createElement("li");
+    li.className = i.saved ? "saved" : "";
+    li.innerHTML = "<span></span><span></span>";
+    li.firstChild.textContent = i.name;
+    li.lastChild.textContent = i.saved ? "Saved ✓" : "Not saved";
+    ul.appendChild(li);
+  }
+  $("saveAll").textContent = unsaved.length ? `Save ${unsaved.length === 1 ? "it" : "all " + unsaved.length} to camera roll` : "Save all again";
+  $("clearSaved").hidden = !savedCount;
+  $("clearSaved").textContent = `Clear ${savedCount} saved`;
+  return items;
+}
+
+$("saveAll").onclick = async () => {
+  const items = await renderFinished();
+  let batch = items.filter((i) => !i.saved);
+  if (!batch.length) batch = items;
+  const files = batch.map((i) => new File([i.blob], i.name, { type: i.mime }));
+  const msg = $("finishedMsg");
+  msg.textContent = "";
+  if (!(navigator.canShare && navigator.share)) {
+    // Computers: download each file instead.
+    for (const f of files) {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(f); a.download = f.name;
+      document.body.appendChild(a); a.click(); a.remove();
+    }
+  } else {
+    // The share sheet has a size limit, so save as many as fit in one go.
+    let n = files.length;
+    while (n > 1 && !navigator.canShare({ files: files.slice(0, n) })) n--;
+    if (!navigator.canShare({ files: files.slice(0, n) })) { msg.textContent = "This phone can't save these videos from here."; return; }
+    try { await navigator.share({ files: files.slice(0, n) }); }
+    catch (err) {
+      if (err.name !== "AbortError") msg.textContent = "Saving didn't finish: " + err.message;
+      return;
+    }
+    batch = batch.slice(0, n);
+    if (n < files.length) msg.textContent = `Saved ${n}. Tap the button again for the rest.`;
+  }
+  for (const i of batch) {
+    const { key, ...rest } = i;
+    await store.idb.put("finished", key, { ...rest, saved: true });
+  }
+  if (!msg.textContent) msg.textContent = `Saved ${batch.length} video${batch.length === 1 ? "" : "s"}. Check Photos, then clear them here to free up space.`;
+  renderFinished();
+};
+
+$("clearSaved").onclick = () => ($("clearBox").hidden = false);
+$("clearNo").onclick = () => ($("clearBox").hidden = true);
+$("clearYes").onclick = async () => {
+  for (const k of await store.idb.keys("finished")) {
+    const i = await store.idb.get("finished", k);
+    if (i.saved) await store.idb.del("finished", k);
+  }
+  $("finishedMsg").textContent = "Cleared.";
+  renderFinished();
 };
 
 // ---------- videos waiting to upload ----------

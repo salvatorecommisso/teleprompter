@@ -75,6 +75,16 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-top: calc(var(--top) + 16px); padding-bottom: 8px; flex-wrap: wrap; }
 .note { font-size: 13px; margin: 0 0 8px; }
 .banner { background: #2a2110; color: var(--accent); border-block: 1px solid #4a3a18; padding-block: 10px; margin-bottom: 8px; display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+.finished { background: var(--panel); border-block: 1px solid var(--line); padding-block: 14px; margin-bottom: 12px; }
+.finished-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.finished-head h2 { font-size: 17px; margin: 0; }
+.finished-list { list-style: none; margin: 8px 0 4px; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+.finished-list li { display: flex; justify-content: space-between; gap: 10px; color: var(--muted); }
+.finished-list li span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.finished-list li span:last-child { white-space: nowrap; }
+.finished-list li.saved span:last-child { color: var(--ok); }
+.finished .row { margin-top: 10px; }
+.finished p { margin: 8px 0 0; }
 .list { display: flex; flex-direction: column; gap: 10px; padding-bottom: calc(var(--bottom) + 24px); }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; display: flex; gap: 12px; align-items: center; cursor: pointer; }
 .card .info { flex: 1; min-width: 0; }

@@ -21,11 +21,13 @@ let dbPromise = null;
 function db() {
   if (!dbPromise) {
     dbPromise = new Promise((resolve, reject) => {
-      const req = indexedDB.open("teleprompter", 1);
+      const req = indexedDB.open("teleprompter", 2);
       req.onupgradeneeded = () => {
         const d = req.result;
-        d.createObjectStore("takes");   // key "<scriptId>|<section>" -> { blob, mime, duration, at }
-        d.createObjectStore("outbox");  // key id -> { blob, name, mime, scriptId, at }
+        const make = (name) => d.objectStoreNames.contains(name) || d.createObjectStore(name);
+        make("takes");    // key "<scriptId>|<section>" -> { blob, mime, duration, at }
+        make("outbox");   // key id -> { blob, name, mime, scriptId, at }  (waiting for Google Drive)
+        make("finished"); // key id -> { blob, name, mime, scriptId, at, saved }  (kept for a batch save)
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
