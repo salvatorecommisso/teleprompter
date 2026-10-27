@@ -199,11 +199,9 @@ input[type=range] { width: 100%; accent-color: var(--text); }
 .take-actions .btn { flex: 1; max-width: 200px; padding: 16px; }
 
 /* Final */
-.final.on { display: flex; flex-direction: column; min-height: 100%; position: relative; z-index: 0; background: var(--bg); }
+.final.on { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; position: relative; z-index: 0; background: var(--bg); }
 .small-frame { position: relative; top: 0; width: auto; height: 52vh; max-height: none; margin: calc(var(--top) + 12px) auto 0; border-radius: 14px; }
 .play { position: absolute; inset: 0; margin: auto; width: 72px; height: 72px; border-radius: 50%; border: 0; background: var(--scrim); font-size: 28px; color: #fff; }
-.final-panel { padding-top: 16px; padding-bottom: calc(var(--bottom) + 20px); }
-.final-panel h1 { margin-bottom: 4px; font-size: 22px; }
 .slider-row { display: flex; gap: 10px; align-items: center; font-size: 14px; color: var(--muted); }
 .progress { margin: 8px 0 14px; }
 .progress-bar { height: 10px; background: var(--panel); border-radius: 999px; overflow: hidden; border: 1px solid var(--line); }
@@ -271,6 +269,25 @@ input[type=range] { width: 100%; accent-color: var(--text); }
 @keyframes redo-count { to { transform: scaleX(0); } }
 .final-strip button.picked::before { background: var(--muted); }
 .final-strip button.picked span { color: var(--text); font-weight: 700; }
-.section-tools { align-items: center; gap: 8px; margin: 8px 0 4px; }
-.section-tools strong { margin-right: auto; }
-#previewTrim { margin-top: 8px; }
+
+/* Finish screen: everything on one screen */
+.final-head { display: flex; align-items: center; gap: 10px; padding: calc(var(--top) + 8px) 16px 8px; }
+.final-head h1 { margin: 0; font-size: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.final-frame { position: relative; flex: 1; min-height: 0; aspect-ratio: 9 / 16; max-width: calc(100% - 32px); margin: 0 auto; border-radius: 14px; overflow: hidden; background: #000; }
+.final-frame video, .final-frame canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.final-frame canvas { z-index: 1; }
+.final-frame .play { z-index: 2; }
+.final-panel { padding: 10px 16px calc(var(--bottom) + 14px); }
+.strip-row { display: flex; align-items: center; gap: 8px; }
+.strip-row .strip { flex: 1; }
+.trim-chips { display: flex; gap: 6px; margin: 10px 0 4px; }
+.trim-chips button { flex: 1; background: var(--panel); border: 1px solid var(--line); color: var(--muted); border-radius: 12px; padding: 8px 4px; font: 600 14px var(--font); line-height: 1.2; }
+.trim-chips button small { display: block; font-weight: 500; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.trim-chips button.on { background: var(--text); border-color: var(--text); color: var(--bg); }
+.trim-chips button.on small { color: #55545c; }
+.final-panel .err:empty { display: none; }
+.progress-btn { position: relative; overflow: hidden; }
+.progress-btn .fill { position: absolute; inset: 0 auto 0 0; width: 0; background: rgba(0,0,0,.18); transition: width .2s; }
+.progress-btn .label { position: relative; }
+#doneText { margin: 0 0 4px; }
+.strip-row [hidden] { display: none; }
