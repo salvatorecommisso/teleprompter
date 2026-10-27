@@ -35,7 +35,7 @@ export function primePlayers(takes, audioCtx) {
     v.primed = p ? p.then(() => v.pause()).catch(() => {}) : Promise.resolve();
     return v;
   });
-  return { players, dest, gain };
+  return { players, dest, gain, limiter };
 }
 
 export function releasePlayers(primed) {
@@ -85,7 +85,9 @@ async function seek(v, t) {
 }
 
 // segments: [{ take, start, end }], where take indexes primed.players.
-export async function render(primed, segments, { onProgress = () => {}, isCancelled = () => false } = {}) {
+// monitor: also play the sound out loud, and onCanvas gets the picture being made, so the
+// person can watch the video while it is put together.
+export async function render(primed, segments, { onProgress = () => {}, isCancelled = () => false, monitor = false, onCanvas } = {}) {
   const { players, dest } = primed;
   // Each part fades its sound in and out over a few hundredths of a second, so cuts don't click.
   const vol = primed.gain.gain, ac = primed.gain.context, FADE = 0.025;
@@ -113,6 +115,8 @@ export async function render(primed, segments, { onProgress = () => {}, isCancel
   // iPhones won't let web apps lock exposure, so sections can come out a little brighter or darker.
   // Measure each take's brightness and nudge them all toward the middle one.
   const shade = await brightnessFactors(players, segments, crop);
+  if (monitor) primed.limiter.connect(ac.destination);
+  onCanvas?.(canvas);
   let factor = 1;
   const draw = (v) => {
     g.globalCompositeOperation = "source-over";
@@ -173,6 +177,7 @@ export async function render(primed, segments, { onProgress = () => {}, isCancel
     doneTime += seg.end - seg.start;
   }
 
+  if (monitor) try { primed.limiter.disconnect(ac.destination); } catch {}
   if (rec.state !== "inactive") rec.stop();
   await stopped;
   stream.getTracks().forEach((t) => t.stop());

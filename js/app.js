@@ -8,7 +8,7 @@ import { pickMime, extFor, primePlayers, releasePlayers, render } from "./render
 const $ = (id) => document.getElementById(id);
 
 // ---------- settings ----------
-const DEFAULTS = { mode: "follow", speed: 4, size: 30, guides: "all", center: true, mirror: true, flip: false, height: 75, sens: 50, micId: "", rail: "right", ghost: true, lockExposure: true };
+const DEFAULTS = { mode: "follow", speed: 4, size: 30, guides: "all", center: true, mirror: true, flip: false, height: 75, sens: 50, micId: "", rail: "right", ghost: true, lockExposure: true, trim: "light" };
 const settings = { ...DEFAULTS, ...store.get("settings", {}) };
 const saveSettings = () => store.set("settings", settings);
 const pxPerSecond = () => 12 + settings.speed * 9;
@@ -1029,6 +1029,7 @@ document.addEventListener("visibilitychange", async () => {
 let curves = {};      // take.at -> loudness curve
 let finalTakes = [];  // takes in section order
 let rendered = null;  // { key, blob, mime }
+let job = null;       // the video being made right now: { key, promise, cancel, watching, keep }
 
 async function openFinal() {
   stopListening();
@@ -1037,105 +1038,198 @@ async function openFinal() {
   show("final");
   $("finalTitle").textContent = script.title;
   $("finalMsg").textContent = "";
-  $("progressBox").hidden = true;
   $("finalActions").hidden = false;
   $("doneActions").hidden = true;
+  $("strips").hidden = $("trimChips").hidden = false;
   $("sendBtn").hidden = !drive.configured();
   lastFinishedKey = null;
   picked = -1;
-  $("sectionTools").hidden = true;
-  $("finalStrip").hidden = $("finalStripHint").hidden = false;
-  drawFinalStrip();
+  cancelJob();
+  $("sectionRedo").hidden = true;
   const missing = sections.map((_, i) => i).filter((i) => !takes[i]);
   if (missing.length) $("finalMsg").textContent = `Section ${missing.map((i) => i + 1).join(", ")} has no take yet and will be left out.`;
   finalTakes = sections.map((_, i) => takes[i]).filter(Boolean);
   rendered = null;
-  if (finalTakes[0]) {
-    const v = $("finalVideo");
-    if (v.src) URL.revokeObjectURL(v.src);
-    v.src = URL.createObjectURL(finalTakes[0].blob) + "#t=0.1";
-  }
+  showStill();
+  drawFinalStrip();
+  drawTrimChips();
   drive.warmUp();
-  $("trimInfo").textContent = "Working out the quiet parts…";
   for (const t of finalTakes) {
     if (curves[t.at]) continue;
     try { curves[t.at] = await loudness(ctx(), t.blob); }
     catch { curves[t.at] = { db: new Float32Array(0), duration: t.duration }; }
+    drawTrimChips();
   }
-  updateTrimInfo();
+  drawTrimChips();
 }
+
+// The first frame of the video, with a play button over it.
+function showStill() {
+  const v = $("finalVideo");
+  if (v.src) URL.revokeObjectURL(v.src.split("#")[0]);
+  const blob = rendered?.blob || finalTakes[0]?.blob;
+  v.removeAttribute("src");
+  if (blob) v.src = URL.createObjectURL(blob) + "#t=0.1";
+  $("finalFrame").querySelector("canvas")?.remove();
+  $("finalPlay").hidden = false;
+  keepLabel();
+}
+
+// Trim presets: how much of the quiet between sentences is cut.
+const TRIMS = [["off", "Off", 0], ["light", "Light", 0.35], ["tight", "Tight", 0.8]];
+const trimNow = () => (TRIMS.some(([k]) => k === settings.trim) ? settings.trim : "light");
 
 // Every take loses its first and last moment (the tap on the record button, the camera settling),
 // and gets its own volume so all sections sound equally loud.
 const EDGE_IN = 0.3, EDGE_OUT = 0.35;
-function segments() {
+function segments(trim = trimNow()) {
+  const strength = TRIMS.find(([k]) => k === trim)[2];
   return finalTakes.flatMap((t, i) => {
     const c = curves[t.at];
     const dur = c?.duration || t.duration;
     const gain = c ? boostFor([c]) : 1;
-    let ranges = c && $("trimOn").checked ? speechRanges(c, $("trimStrength").value / 100) : [[0, dur]];
+    let ranges = c && strength ? speechRanges(c, strength) : [[0, dur]];
     if (dur > EDGE_IN + EDGE_OUT + 0.5) {
       ranges = ranges.map(([a, b]) => [Math.max(a, EDGE_IN), Math.min(b, dur - EDGE_OUT)]).filter(([a, b]) => b - a > 0.08);
     }
     return ranges.map(([start, end]) => ({ take: i, start, end, gain }));
   });
 }
+const keyOf = (segs) => JSON.stringify(segs.map((s) => [s.take, s.start.toFixed(2), s.end.toFixed(2)]));
 
-function updateTrimInfo() {
-  $("trimBox").hidden = !$("trimOn").checked;
-  const full = finalTakes.reduce((t, k) => t + (curves[k.at]?.duration || k.duration), 0);
-  const kept = totalLength(segments());
-  $("trimInfo").textContent = $("trimOn").checked
-    ? `Cuts ${(full - kept).toFixed(1)} s of quiet. New length ${kept.toFixed(1)} s (was ${full.toFixed(1)} s).`
-    : `Length ${full.toFixed(1)} s.`;
-  $("trimSummary").textContent = $("trimOn").checked ? `· silences trimmed, ${kept.toFixed(1)} s` : `· no trimming, ${full.toFixed(1)} s`;
-  stopPreview();
+function drawTrimChips() {
+  const box = $("trimChips");
+  box.textContent = "";
+  for (const [k, label] of TRIMS) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = k === trimNow() ? "on" : "";
+    b.innerHTML = `${label}<small>${Math.round(totalLength(segments(k)))} s</small>`;
+    b.setAttribute("aria-label", `Trim quiet parts: ${label}`);
+    b.onclick = () => {
+      if (job?.keep) return;
+      settings.trim = k;
+      saveSettings();
+      drawTrimChips();
+      // Show the change straight away by playing the whole thing with the new cuts.
+      playWhole();
+    };
+    box.appendChild(b);
+  }
 }
-$("trimOn").onchange = updateTrimInfo;
-$("trimStrength").oninput = updateTrimInfo;
 
-// Preview jumps through the kept parts without making a new file, so changes show instantly.
+// ----- playing back -----
+// Sections play straight from the recorded takes, so a tap starts them at once.
+// Playing the whole thing also makes the finished video as it plays, so Save is instant afterwards.
 let preview = null;
-function stopPreview() {
-  if (!preview) return;
-  preview.stop = true;
-  $("finalVideo").pause();
+function stopPlayback() {
+  if (preview) { preview.stop = true; preview = null; }
+  if (job?.watching && !job.keep) cancelJob();
+  const v = $("finalVideo");
+  v.pause();
+  v.ontimeupdate = v.onended = null;
   $("finalPlay").hidden = false;
-  preview = null;
+  $("sectionRedo").hidden = picked < 0;
+  drawFinalStrip();
+}
+const isPlaying = () => !!preview || !!job?.watching || !$("finalVideo").paused;
+
+function cancelJob() {
+  if (!job || job.keep) return;
+  job.cancel = true;
+  job = null;
+  showStill();
 }
 
-// Plays the kept parts (after trimming) of every section, or of one section.
-$("finalPlay").onclick = () => playPreview(segments());
-$("previewTrim").onclick = () => playPreview(segments());
+// Where each section sits in the finished video: [start, end] in seconds.
+function sectionSpans(segs) {
+  const spans = {};
+  let at = 0;
+  for (const s of segs) {
+    const i = sectionOfTake(s.take);
+    spans[i] ||= [at, at];
+    at += s.end - s.start;
+    spans[i][1] = at;
+  }
+  return spans;
+}
+function fillStrip(seconds, segs) {
+  const spans = sectionSpans(segs);
+  $("finalStrip").querySelectorAll("button").forEach((b, i) => {
+    const sp = spans[i];
+    const f = sp ? Math.max(0, Math.min(1, (seconds - sp[0]) / (sp[1] - sp[0] || 1))) : 0;
+    b.querySelector("i").style.width = f * 100 + "%";
+    b.classList.toggle("current", !!sp && seconds >= sp[0] && seconds < sp[1]);
+  });
+}
 
-async function playPreview(segs) {
-  stopPreview();
+async function playWhole() {
+  picked = -1;
+  stopPlayback();
+  const segs = segments();
+  if (!segs.length) return;
+  $("finalPlay").hidden = true;
+  if (rendered && rendered.key === keyOf(segs)) {
+    // Already made: just play the finished file.
+    const v = $("finalVideo");
+    showStill();
+    $("finalPlay").hidden = true;
+    v.currentTime = 0;
+    v.ontimeupdate = () => fillStrip(v.currentTime, segs);
+    v.onended = () => { fillStrip(0, segs); stopPlayback(); };
+    await v.play().catch(() => stopPlayback());
+    return;
+  }
+  try { await videoFor(segs, true); } catch (err) { $("finalMsg").textContent = err.message; }
+  if (!job) { $("finalPlay").hidden = false; drawFinalStrip(); }
+}
+
+async function playSection(i) {
+  stopPlayback();
+  picked = i;
+  $("sectionRedo").hidden = false;
+  const t = finalTakes.indexOf(takes[i]);
+  const all = segments();
+  const segs = all.filter((s) => s.take === t);
   if (!segs.length) return;
   const v = $("finalVideo");
-  const urls = finalTakes.map((t) => URL.createObjectURL(t.blob));
+  $("finalFrame").querySelector("canvas")?.remove();
+  const url = URL.createObjectURL(finalTakes[t].blob);
   const p = (preview = { stop: false });
   $("finalPlay").hidden = true;
-  let current = -1;
+  drawFinalStrip();
+  v.src = url;
+  await new Promise((r) => v.addEventListener("loadedmetadata", r, { once: true }));
+  const startAt = sectionSpans(all)[i][0];
+  let done = 0;
   for (const seg of segs) {
     if (p.stop) break;
-    if (seg.take !== current) {
-      drawFinalStrip(sectionOfTake(seg.take));
-      v.src = urls[seg.take];
-      current = seg.take;
-      await new Promise((r) => v.addEventListener("loadedmetadata", r, { once: true }));
-    }
     v.currentTime = seg.start;
     await v.play().catch(() => {});
     await new Promise((r) => {
-      const tick = () => (p.stop || v.currentTime >= seg.end - 0.03 || v.ended ? r() : requestAnimationFrame(tick));
+      const tick = () => {
+        if (p.stop) return r();
+        fillStrip(startAt + done + Math.max(0, v.currentTime - seg.start), all);
+        if (v.currentTime >= seg.end - 0.03 || v.ended) return r();
+        requestAnimationFrame(tick);
+      };
       tick();
     });
+    done += seg.end - seg.start;
   }
   v.pause();
-  urls.forEach((u) => URL.revokeObjectURL(u));
-  if (preview === p) { preview = null; $("finalPlay").hidden = false; drawFinalStrip(picked); }
+  URL.revokeObjectURL(url);
+  if (preview === p) { preview = null; $("finalPlay").hidden = false; drawFinalStrip(); }
 }
-$("finalVideo").onclick = stopPreview;
+
+$("finalPlay").onclick = (e) => { e.stopPropagation(); playWhole(); };
+// Tap anywhere on the screen (not a button) to play the whole video, or to stop it.
+$("final").onclick = (e) => {
+  if (e.target.closest("button, input, a, select, label")) return;
+  if (job?.keep) return;
+  if (isPlaying()) stopPlayback();
+  else playWhole();
+};
 
 function fileName(ext) {
   const d = new Date();
@@ -1143,51 +1237,88 @@ function fileName(ext) {
   return `${script.title.replace(/[\\/:*?"<>|]+/g, "").slice(0, 60).trim()} ${stamp}.${ext}`;
 }
 
-function progress(frac, text) {
-  $("progressBox").hidden = false;
-  $("progressBar").style.width = Math.round(frac * 100) + "%";
-  $("progressText").textContent = text;
+// The Save button fills up while the video is being made.
+function keepLabel(frac = null, text = null) {
+  $("keepBtn").querySelector(".fill").style.width = frac == null ? "0" : Math.round(frac * 100) + "%";
+  $("keepBtn").querySelector(".label").textContent = text || "Save video";
 }
 
-// Starts from a tap. Makes (or reuses) the finished video.
-async function makeVideo(primed) {
-  const segs = segments();
-  const key = JSON.stringify(segs.map((s) => [s.take, s.start.toFixed(2), s.end.toFixed(2)]));
-  if (rendered && rendered.key === key) { if (primed) releasePlayers(primed); return rendered; }
+// Makes (or reuses) the finished video. Must start from a tap.
+// watching: play it on screen with sound while it is made.
+function videoFor(segs, watching = false) {
+  const key = keyOf(segs);
+  if (rendered && rendered.key === key) return Promise.resolve(rendered);
+  if (job && job.key === key) return job.promise;
+  cancelJob();
   const boost = Math.max(...segs.map((s) => s.gain));
   const single = boost < 1.1 && segs.length === 1 && segs[0].start < 0.05 && finalTakes.length === 1 && segs[0].end >= (curves[finalTakes[0].at]?.duration || 0) - 0.05;
-  if (single && primed) {
+  if (single) {
     // One untrimmed take: use it as recorded, no need to remake it.
-    releasePlayers(primed);
     const t = finalTakes[0];
     rendered = { key, blob: t.blob, mime: t.mime };
-    return rendered;
+    if (watching) { showStill(); playWhole(); }
+    return Promise.resolve(rendered);
   }
+  const primed = primePlayers(finalTakes, ctx());
   const total = totalLength(segs);
-  const out = await render(primed, segs, {
-    onProgress: (f) => progress(f, `Making your video… ${Math.round(f * total)} of ${Math.round(total)} s. Keep this screen open.`),
-  });
-  releasePlayers(primed);
-  if (!out) throw new Error("Making the video stopped. Try again.");
-  rendered = { key, blob: out.blob, mime: out.mime };
-  return rendered;
+  const j = (job = { key, cancel: false, watching, keep: false });
+  j.promise = (async () => {
+    try {
+      const out = await render(primed, segs, {
+        monitor: watching,
+        isCancelled: () => j.cancel,
+        onCanvas: (c) => { $("finalFrame").querySelector("canvas")?.remove(); $("finalFrame").appendChild(c); },
+        onProgress: (f) => {
+          if (j.cancel) return;
+          if (j.watching) fillStrip(f * total, segs);
+          keepLabel(f, j.keep ? `Making your video… ${Math.round(f * total)} of ${Math.round(total)} s` : null);
+        },
+      });
+      if (j.cancel) return null;
+      if (!out) throw new Error("Making the video stopped. Try again.");
+      rendered = { key, blob: out.blob, mime: out.mime };
+      return rendered;
+    } finally {
+      releasePlayers(primed);
+      if (job === j) {
+        job = null;
+        showStill();
+        $("sectionRedo").hidden = picked < 0;
+        drawFinalStrip();
+      }
+    }
+  })();
+  return j.promise;
 }
 
 function busy(on) {
-  for (const id of ["sendBtn", "keepBtn", "finalBack", "trimOn", "trimStrength", "saveAfter", "nextScript"]) $(id).disabled = on;
+  for (const id of ["sendBtn", "keepBtn", "finalBack", "saveAfter", "nextScript", "sectionRedo"]) $(id).disabled = on;
+  $("trimChips").querySelectorAll("button").forEach((b) => (b.disabled = on));
 }
 
+// Gets the finished video for Save or Send, finishing the one already being made if there is one.
+async function finishedVideo() {
+  if (preview) stopPlayback();
+  const segs = segments();
+  if (!segs.length) throw new Error("There's nothing recorded to save yet.");
+  const p = videoFor(segs, false);
+  if (job) job.keep = true;
+  const video = await p;
+  if (!video) throw new Error("Making the video stopped. Try again.");
+  return video;
+}
+
+function doneText(text) { $("doneText").textContent = text; }
+
 $("sendBtn").onclick = async () => {
-  stopPreview();
   $("finalMsg").textContent = "";
-  const primed = rendered ? null : primePlayers(finalTakes, ctx());
   const signing = drive.configured() ? drive.signIn() : null;
   signing?.catch(() => {});
   busy(true);
   try {
-    const video = await makeVideo(primed);
+    const video = await finishedVideo();
     if (!drive.configured()) {
-      progress(1, "Your video is ready.");
+      doneText("Your video is ready.");
       showDone(false);
       return;
     }
@@ -1196,20 +1327,22 @@ $("sendBtn").onclick = async () => {
     await store.idb.put("outbox", id, { blob: video.blob, name, mime: video.mime, scriptId: script.id, at: Date.now() });
     try {
       await signing;
-      progress(0, "Uploading to Google Drive…");
-      await drive.upload(video.blob, name, video.mime, (f) => progress(f, `Uploading to Google Drive… ${Math.round(f * 100)}%`));
+      keepLabel(0, "Uploading…");
+      $("sendBtn").textContent = "Uploading to Google Drive…";
+      await drive.upload(video.blob, name, video.mime, (f) => ($("sendBtn").textContent = `Uploading to Google Drive… ${Math.round(f * 100)}%`));
       await store.idb.del("outbox", id);
-      progress(1, `Uploaded to Google Drive › Teleprompter Recordings as "${name}".`);
+      doneText(`Uploaded to Google Drive › Teleprompter Recordings as "${name}".`);
       showDone(true);
     } catch (err) {
-      progress(1, "Your video is saved on this phone and will upload next time you open the app.");
+      doneText("Your video is saved on this phone and will upload next time you open the app.");
       $("finalMsg").textContent = err.message;
       showDone(false);
     }
   } catch (err) {
     $("finalMsg").textContent = err.message;
-    $("progressBox").hidden = true;
   } finally {
+    $("sendBtn").textContent = "Send to Google Drive";
+    keepLabel();
     busy(false);
   }
 };
@@ -1234,39 +1367,35 @@ $("saveAfter").onclick = async () => {
     const v = await store.idb.get("finished", lastFinishedKey);
     if (v) await store.idb.put("finished", lastFinishedKey, { ...v, saved: true });
   }
-  progress(1, "Saved to your camera roll.");
+  doneText("Saved to your camera roll.");
   $("saveAfter").textContent = "Save to camera roll again";
 };
 
-// Final screen strip: tap a section to go back and redo just that one.
+// Final screen strip: fills as the video plays. Tap a section to watch just that one.
 let lastFinishedKey = null;
-function drawFinalStrip(playing = -1) {
+function drawFinalStrip() {
   const strip = $("finalStrip");
   strip.textContent = "";
   sections.forEach((_, i) => {
     const b = document.createElement("button");
     b.type = "button";
-    b.className = (takes[i] ? "have" : "") + (i === playing ? " current" : "");
-    b.innerHTML = `<i style="width:${takes[i] ? 100 : 0}%"></i><span>${i + 1}</span>`;
+    b.className = takes[i] ? "have" : "";
+    b.innerHTML = `<i style="width:0%"></i><span>${i + 1}</span>`;
     if (i === picked) b.classList.add("picked");
     b.setAttribute("aria-label", `Play section ${i + 1}`);
     b.onclick = () => {
-      if ($("keepBtn").disabled || !takes[i]) return; // busy making the video, or nothing recorded
-      picked = i;
-      const t = finalTakes.indexOf(takes[i]);
-      $("sectionTools").hidden = false;
-      $("sectionLabel").textContent = `Section ${i + 1}`;
-      playPreview(segments().filter((s) => s.take === t));
+      if (job?.keep || !takes[i]) return; // busy saving, or nothing recorded
+      playSection(i);
     };
     strip.appendChild(b);
   });
 }
 let picked = -1;
 const sectionOfTake = (t) => sections.findIndex((_, i) => takes[i] === finalTakes[t]);
-$("sectionPlay").onclick = () => { const t = finalTakes.indexOf(takes[picked]); playPreview(segments().filter((s) => s.take === t)); };
 $("sectionRedo").onclick = async () => {
-  if ($("keepBtn").disabled || picked < 0) return;
-  stopPreview();
+  if (job?.keep || picked < 0) return;
+  stopPlayback();
+  cancelJob();
   show("studio");
   applySettings();
   loadSection(picked);
@@ -1285,29 +1414,29 @@ function markSaved() {
 }
 
 $("keepBtn").onclick = async () => {
-  stopPreview();
   $("finalMsg").textContent = "";
-  const primed = rendered ? null : primePlayers(finalTakes, ctx());
   busy(true);
   try {
-    const video = await makeVideo(primed);
+    const video = await finishedVideo();
     lastFinishedKey = "f" + Date.now();
     await store.idb.put("finished", lastFinishedKey, {
       blob: video.blob, name: fileName(extFor(video.mime)), mime: video.mime, scriptId: script.id, at: Date.now(), saved: false,
     });
-    progress(1, "Your video is ready and kept in the app. Save it to your camera roll now, or later from the Scripts page.");
+    doneText("Your video is ready and kept in the app. Save it to your camera roll now, or later from the Scripts page.");
     showDone(true, true);
   } catch (err) {
     $("finalMsg").textContent = err.message;
-    $("progressBox").hidden = true;
   } finally {
+    keepLabel();
     busy(false);
   }
 };
 
 function showDone(uploaded, kept = false) {
+  stopPlayback();
+  picked = -1;
   $("finalActions").hidden = true;
-  $("finalStrip").hidden = $("finalStripHint").hidden = $("sectionTools").hidden = true;
+  $("strips").hidden = $("trimChips").hidden = $("sectionRedo").hidden = true;
   $("doneActions").hidden = false;
   $("saveAfter").hidden = false;
   $("saveAfter").textContent = kept || !uploaded ? "Save to camera roll" : "Also save to camera roll";
@@ -1318,7 +1447,8 @@ function showDone(uploaded, kept = false) {
 }
 
 $("finalBack").onclick = async () => {
-  stopPreview();
+  stopPlayback();
+  cancelJob();
   show("studio");
   applySettings();
   loadSection(sectionIndex);

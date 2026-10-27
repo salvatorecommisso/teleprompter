@@ -200,29 +200,27 @@
 
 <!-- Final review, trim and send -->
 <section id="final" class="screen final">
-  <div class="frame small-frame"><video id="finalVideo" playsinline></video><button id="finalPlay" class="play" type="button" aria-label="Play">▶</button></div>
-  <div class="pad final-panel">
+  <header class="final-head">
+    <button id="finalBack" class="btn small icon" type="button" aria-label="Back to recording"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
     <h1 id="finalTitle">Your video</h1>
-    <div id="finalStrip" class="strip final-strip" role="group" aria-label="Sections"></div>
-    <div id="sectionTools" class="row section-tools" hidden><strong id="sectionLabel"></strong><button id="sectionPlay" class="btn small" type="button">▶ Play again</button><button id="sectionRedo" class="btn small" type="button">Redo this section</button></div>
-    <p id="finalStripHint" class="muted small-text">Tap ▶ to watch it all, or tap a section to watch just that part. Nothing is saved until you tap Save video.</p>
-    <details class="adjust">
-      <summary>Adjust <span id="trimSummary" class="muted"></span></summary>
-      <label class="check"><input id="trimOn" type="checkbox" checked> Trim silences</label>
-      <div id="trimBox">
-        <div class="slider-row"><span>Gentle</span><input id="trimStrength" type="range" min="0" max="100" value="50" aria-label="Trim strength"><span>Tight</span></div>
-      </div>
-      <p id="trimInfo" class="muted">Working out the quiet parts…</p>
-      <button id="previewTrim" class="btn small" type="button">▶ Preview with these cuts</button>
-    </details>
+  </header>
+  <div id="finalFrame" class="final-frame">
+    <video id="finalVideo" playsinline></video>
+    <button id="finalPlay" class="play" type="button" aria-label="Play the whole video">▶</button>
+  </div>
+  <div class="final-panel">
+    <div id="strips" class="strip-row">
+      <div id="finalStrip" class="strip final-strip" role="group" aria-label="Sections"></div>
+      <button id="sectionRedo" class="btn small icon" type="button" aria-label="Redo the selected section" hidden><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v6h6"/></svg></button>
+    </div>
+    <div id="trimChips" class="trim-chips" role="group" aria-label="Silence trimming"></div>
     <p id="finalMsg" class="err" role="alert"></p>
-    <div id="progressBox" class="progress" hidden><div class="progress-bar"><div id="progressBar"></div></div><p id="progressText"></p></div>
     <div id="finalActions" class="stack">
-      <button id="keepBtn" class="btn primary wide big" type="button">Save video</button>
+      <button id="keepBtn" class="btn primary wide big progress-btn" type="button"><span class="fill"></span><span class="label">Save video</span></button>
       <button id="sendBtn" class="btn wide" type="button">Send to Google Drive</button>
-      <button id="finalBack" class="btn wide ghost" type="button">Back to recording</button>
     </div>
     <div id="doneActions" class="stack" hidden>
+      <p id="doneText" class="muted small-text"></p>
       <button id="saveAfter" class="btn primary wide big" type="button">Save to camera roll</button>
       <button id="nextScript" class="btn wide" type="button">Next script</button>
     </div>
