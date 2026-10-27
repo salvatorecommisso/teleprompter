@@ -1042,6 +1042,8 @@ async function openFinal() {
   $("doneActions").hidden = true;
   $("sendBtn").hidden = !drive.configured();
   lastFinishedKey = null;
+  picked = -1;
+  $("sectionTools").hidden = true;
   $("finalStrip").hidden = $("finalStripHint").hidden = false;
   drawFinalStrip();
   const missing = sections.map((_, i) => i).filter((i) => !takes[i]);
@@ -1102,8 +1104,12 @@ function stopPreview() {
   preview = null;
 }
 
-$("finalPlay").onclick = async () => {
-  const segs = segments();
+// Plays the kept parts (after trimming) of every section, or of one section.
+$("finalPlay").onclick = () => playPreview(segments());
+$("previewTrim").onclick = () => playPreview(segments());
+
+async function playPreview(segs) {
+  stopPreview();
   if (!segs.length) return;
   const v = $("finalVideo");
   const urls = finalTakes.map((t) => URL.createObjectURL(t.blob));
@@ -1113,7 +1119,7 @@ $("finalPlay").onclick = async () => {
   for (const seg of segs) {
     if (p.stop) break;
     if (seg.take !== current) {
-      drawFinalStrip(sections.findIndex((_, i) => takes[i] === finalTakes[seg.take]));
+      drawFinalStrip(sectionOfTake(seg.take));
       v.src = urls[seg.take];
       current = seg.take;
       await new Promise((r) => v.addEventListener("loadedmetadata", r, { once: true }));
@@ -1127,8 +1133,8 @@ $("finalPlay").onclick = async () => {
   }
   v.pause();
   urls.forEach((u) => URL.revokeObjectURL(u));
-  if (preview === p) { preview = null; $("finalPlay").hidden = false; drawFinalStrip(); }
-};
+  if (preview === p) { preview = null; $("finalPlay").hidden = false; drawFinalStrip(picked); }
+}
 $("finalVideo").onclick = stopPreview;
 
 function fileName(ext) {
@@ -1242,19 +1248,31 @@ function drawFinalStrip(playing = -1) {
     b.type = "button";
     b.className = (takes[i] ? "have" : "") + (i === playing ? " current" : "");
     b.innerHTML = `<i style="width:${takes[i] ? 100 : 0}%"></i><span>${i + 1}</span>`;
-    b.setAttribute("aria-label", `Redo section ${i + 1}`);
-    b.onclick = async () => {
-      if ($("keepBtn").disabled) return; // busy making the video
-      stopPreview();
-      show("studio");
-      applySettings();
-      loadSection(i);
-      try { await startCamera(); } catch {}
-      toast(`Redo section ${i + 1}. Tap record when ready.`);
+    if (i === picked) b.classList.add("picked");
+    b.setAttribute("aria-label", `Play section ${i + 1}`);
+    b.onclick = () => {
+      if ($("keepBtn").disabled || !takes[i]) return; // busy making the video, or nothing recorded
+      picked = i;
+      const t = finalTakes.indexOf(takes[i]);
+      $("sectionTools").hidden = false;
+      $("sectionLabel").textContent = `Section ${i + 1}`;
+      playPreview(segments().filter((s) => s.take === t));
     };
     strip.appendChild(b);
   });
 }
+let picked = -1;
+const sectionOfTake = (t) => sections.findIndex((_, i) => takes[i] === finalTakes[t]);
+$("sectionPlay").onclick = () => { const t = finalTakes.indexOf(takes[picked]); playPreview(segments().filter((s) => s.take === t)); };
+$("sectionRedo").onclick = async () => {
+  if ($("keepBtn").disabled || picked < 0) return;
+  stopPreview();
+  show("studio");
+  applySettings();
+  loadSection(picked);
+  try { await startCamera(); } catch {}
+  toast(`Redo section ${picked + 1}. Tap record when ready.`);
+};
 
 function setProgress(id, patch) {
   const p = store.get("progress", {});
@@ -1289,7 +1307,7 @@ $("keepBtn").onclick = async () => {
 
 function showDone(uploaded, kept = false) {
   $("finalActions").hidden = true;
-  $("finalStrip").hidden = $("finalStripHint").hidden = true;
+  $("finalStrip").hidden = $("finalStripHint").hidden = $("sectionTools").hidden = true;
   $("doneActions").hidden = false;
   $("saveAfter").hidden = false;
   $("saveAfter").textContent = kept || !uploaded ? "Save to camera roll" : "Also save to camera roll";

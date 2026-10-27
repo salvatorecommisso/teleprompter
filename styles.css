@@ -199,7 +199,7 @@ input[type=range] { width: 100%; accent-color: var(--text); }
 .take-actions .btn { flex: 1; max-width: 200px; padding: 16px; }
 
 /* Final */
-.final.on { display: flex; flex-direction: column; min-height: 100%; }
+.final.on { display: flex; flex-direction: column; min-height: 100%; position: relative; z-index: 0; background: var(--bg); }
 .small-frame { position: relative; top: 0; width: auto; height: 52vh; max-height: none; margin: calc(var(--top) + 12px) auto 0; border-radius: 14px; }
 .play { position: absolute; inset: 0; margin: auto; width: 72px; height: 72px; border-radius: 50%; border: 0; background: var(--scrim); font-size: 28px; color: #fff; }
 .final-panel { padding-top: 16px; padding-bottom: calc(var(--bottom) + 20px); }
@@ -269,3 +269,8 @@ input[type=range] { width: 100%; accent-color: var(--text); }
 .redo-time { position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; background: rgba(255,255,255,.5); transform-origin: left; }
 .redo-bar.run .redo-time { animation: redo-count var(--ms, 4s) linear forwards; }
 @keyframes redo-count { to { transform: scaleX(0); } }
+.final-strip button.picked::before { background: var(--muted); }
+.final-strip button.picked span { color: var(--text); font-weight: 700; }
+.section-tools { align-items: center; gap: 8px; margin: 8px 0 4px; }
+.section-tools strong { margin-right: auto; }
+#previewTrim { margin-top: 8px; }
