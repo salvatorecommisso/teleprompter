@@ -32,6 +32,8 @@ Until this is done, the app makes the video and you save it to your camera roll.
 
 Videos go into a **Teleprompter Recordings** folder in your Drive.
 
+Current setup: Google Cloud project "Prompter", web client "Prompter web". The app is in Testing mode with sal@salcommisso.ca as the only test user, so sign in with that account; Google may ask you to sign in again about every 7 days. Publishing the app (which needs a homepage and privacy policy under Branding) would end that.
+
 ## For Claude: adding scripts
 
 Keep the plain script list outside this repository (it's private). It's a JSON array of `{ "id", "title", "body" }`. Then run:
